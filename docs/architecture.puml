@@ -1,0 +1,79 @@
+@startuml artboard_architecture
+title Arstro Artboard — Architecture (v0.1.0)
+skinparam classAttributeIconSize 0
+hide empty members
+
+package core {
+  class Point  { x; y }
+  class Size   { w; h }
+  class Rect   { x; y; w; h }
+  class Transform { a;b;c;d;e;f\n+identity/translate/scale/rotate\n+mul(); apply(Point) }
+  class Color  { r;g;b;a\n+rgba(); hex() }
+}
+
+package anim {
+  enum Easing
+  class Animation { from; to; durationMs; easing\n+value(elapsed); finished(elapsed) }
+  class AnimatedProperty { +animateTo(target,dur,easing)\n+update(nowMs); value() }
+  Animation ..> Easing
+  AnimatedProperty *--> Animation
+}
+
+package render {
+  interface IRenderTarget {
+    +save()/restore()
+    +setTransform(Transform)
+    +setFill(Color)/setStroke(Color,w)
+    +beginPath()/moveTo/lineTo/quadTo/cubicTo/closePath
+    +fillPath()/strokePath()
+    +drawText(s,x,y,size)
+  }
+  class RecordingTarget {
+    +ops() : vector<DrawOp>
+  }
+  RecordingTarget ..|> IRenderTarget
+}
+
+package scene {
+  abstract class Drawable {
+    +transform : Transform
+    +visible; opacity
+    +render(IRenderTarget&)
+    #{abstract} onDraw(IRenderTarget&)
+  }
+  class Rectangle
+  class Line
+  class Polyline
+  class Ellipse
+  class Path
+  class Text
+  class Artboard {
+    +size; background
+    +add(Drawable)
+    +render(IRenderTarget&, nowMs)
+  }
+  Rectangle  --|> Drawable
+  Line       --|> Drawable
+  Polyline   --|> Drawable
+  Ellipse    --|> Drawable
+  Path       --|> Drawable
+  Text       --|> Drawable
+  Artboard o--> "*" Drawable
+}
+
+Drawable ..> IRenderTarget : draws via
+Drawable ..> Transform
+
+package "adapter/web" <<adapter>> {
+  class Canvas2DTarget {
+    ' maps IRenderTarget -> HTML Canvas2D (Emscripten EM_JS)
+  }
+  Canvas2DTarget ..|> IRenderTarget
+}
+note bottom of Canvas2DTarget
+  Device adapter for the web target.
+  Future adapters (framebuffer, native,
+  video-frame) implement the same HAL.
+end note
+
+@enduml

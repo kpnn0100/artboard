@@ -1,0 +1,8 @@
+/build/
+/build-cov/
+*.o
+*.a
+*.gcno
+*.gcda
+*.gcov
+.DS_Store
