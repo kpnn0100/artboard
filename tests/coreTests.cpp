@@ -213,4 +213,141 @@ TEST(Artboard_background_children_and_onframe)
     CHECK(t2.count(K::Save) == 1 && t2.count(K::Restore) == 1 && t2.count(K::SetStroke) == 1);
 }
 
+// ───────────────────────── input: GestureRecognizer ─────────────────────────
+using GT = Gesture::Type;
+using PB = PointerButton;
+
+static std::vector<Gesture> recordGestures(std::function<void(GestureRecognizer &)> drive)
+{
+    GestureRecognizer r;
+    std::vector<Gesture> out;
+    r.setSink([&](const Gesture &g) { out.push_back(g); });
+    drive(r);
+    return out;
+}
+static int countG(const std::vector<Gesture> &v, GT t)
+{
+    int n = 0; for (auto &g : v) if (g.type == t) ++n; return n;
+}
+static int countOf(const std::vector<GT> &v, GT t)
+{
+    int n = 0; for (auto x : v) if (x == t) ++n; return n;
+}
+
+TEST(Gesture_click)
+{
+    auto g = recordGestures([](GestureRecognizer &r) {
+        r.feed({RawPointer::Kind::Down, {5, 5}, PB::Left, 100});
+        r.feed({RawPointer::Kind::Up,   {5, 5}, PB::Left, 120});
+    });
+    CHECK(countG(g, GT::Down) == 1 && countG(g, GT::Up) == 1 && countG(g, GT::Click) == 1);
+    CHECK(countG(g, GT::DoubleClick) == 0);
+}
+
+TEST(Gesture_double_click_then_reset)
+{
+    auto g = recordGestures([](GestureRecognizer &r) {
+        r.setDoubleClickMs(300);
+        r.feed({RawPointer::Kind::Down, {5, 5}, PB::Left, 100});
+        r.feed({RawPointer::Kind::Up,   {5, 5}, PB::Left, 120});   // Click
+        r.feed({RawPointer::Kind::Down, {5, 5}, PB::Left, 250});
+        r.feed({RawPointer::Kind::Up,   {5, 5}, PB::Left, 280});   // DoubleClick (within window)
+        r.feed({RawPointer::Kind::Down, {5, 5}, PB::Left, 320});
+        r.feed({RawPointer::Kind::Up,   {5, 5}, PB::Left, 340});   // Click again (reset)
+    });
+    CHECK(countG(g, GT::DoubleClick) == 1);
+    CHECK(countG(g, GT::Click) == 2);
+}
+
+TEST(Gesture_not_double_when_far_or_late)
+{
+    auto far = recordGestures([](GestureRecognizer &r) {
+        r.feed({RawPointer::Kind::Down, {5, 5}, PB::Left, 100});
+        r.feed({RawPointer::Kind::Up,   {5, 5}, PB::Left, 110});
+        r.feed({RawPointer::Kind::Down, {99, 99}, PB::Left, 120});
+        r.feed({RawPointer::Kind::Up,   {99, 99}, PB::Left, 130}); // far -> not double
+    });
+    CHECK(countG(far, GT::DoubleClick) == 0 && countG(far, GT::Click) == 2);
+
+    auto late = recordGestures([](GestureRecognizer &r) {
+        r.setDoubleClickMs(100);
+        r.feed({RawPointer::Kind::Down, {5, 5}, PB::Left, 100});
+        r.feed({RawPointer::Kind::Up,   {5, 5}, PB::Left, 110});
+        r.feed({RawPointer::Kind::Down, {5, 5}, PB::Left, 900});
+        r.feed({RawPointer::Kind::Up,   {5, 5}, PB::Left, 910});   // late -> not double
+    });
+    CHECK(countG(late, GT::DoubleClick) == 0 && countG(late, GT::Click) == 2);
+}
+
+TEST(Gesture_right_click)
+{
+    auto g = recordGestures([](GestureRecognizer &r) {
+        r.feed({RawPointer::Kind::Down, {5, 5}, PB::Right, 100});
+        r.feed({RawPointer::Kind::Up,   {5, 5}, PB::Right, 110});
+    });
+    CHECK(countG(g, GT::RightClick) == 1 && countG(g, GT::Click) == 0);
+}
+
+TEST(Gesture_drag_and_drop)
+{
+    auto g = recordGestures([](GestureRecognizer &r) {
+        r.setDragThreshold(5);
+        r.feed({RawPointer::Kind::Down, {0, 0}, PB::Left, 0});
+        r.feed({RawPointer::Kind::Move, {20, 0}, PB::Left, 10});  // crosses threshold: DragStart + Drag
+        r.feed({RawPointer::Kind::Move, {40, 0}, PB::Left, 20});  // Drag
+        r.feed({RawPointer::Kind::Up,   {40, 0}, PB::Left, 30});  // Up + Drop (no Click)
+    });
+    CHECK(countG(g, GT::DragStart) == 1);
+    CHECK(countG(g, GT::Drag) == 2);
+    CHECK(countG(g, GT::Drop) == 1);
+    CHECK(countG(g, GT::Click) == 0);
+}
+
+TEST(Gesture_hover_move)
+{
+    auto g = recordGestures([](GestureRecognizer &r) {
+        r.feed({RawPointer::Kind::Move, {3, 3}, PB::Left, 5}); // no press -> hover Move
+    });
+    CHECK(countG(g, GT::Move) == 1);
+    // a recognizer with no sink must not crash:
+    GestureRecognizer silent;
+    silent.feed({RawPointer::Kind::Down, {0, 0}, PB::Left, 0});
+}
+
+// ───────────────────────── input: InputRouter ─────────────────────────
+TEST(InputRouter_topmost_capture_and_miss)
+{
+    int aHits = 0;
+    std::vector<GT> bSeq;
+    RectTarget a(Rect{0, 0, 10, 10}, [&](const Gesture &) { ++aHits; });
+    RectTarget b(Rect{0, 0, 10, 10}, [&](const Gesture &g) { bSeq.push_back(g.type); });
+    InputRouter router;
+    router.add(&a);
+    router.add(&b); // b added last -> on top
+
+    // Press sequence captures the topmost (b); drag leaves bounds but still routes to b.
+    router.route({GT::Down, {5, 5}, {5, 5}, PB::Left});
+    CHECK(router.captured() == &b);
+    router.route({GT::DragStart, {50, 50}, {5, 5}, PB::Left});
+    router.route({GT::Drag, {80, 80}, {5, 5}, PB::Left});
+    router.route({GT::Drop, {80, 80}, {5, 5}, PB::Left});
+    CHECK(router.captured() == nullptr);
+    CHECK(bSeq.size() == 4 && aHits == 0); // Down,DragStart,Drag,Drop all to b; a never hit
+
+    // Hover (no capture) routes to topmost; a miss routes to nobody.
+    bSeq.clear();
+    router.route({GT::Move, {5, 5}, {5, 5}, PB::Left});
+    CHECK(bSeq.size() == 1);
+    router.route({GT::Move, {500, 500}, {500, 500}, PB::Left}); // miss -> nobody
+    router.route({GT::Click, {5, 5}, {5, 5}, PB::Left});        // fresh hit-test -> b
+    router.route({GT::Click, {500, 500}, {500, 500}, PB::Left}); // miss -> nobody (topAt nullptr)
+    CHECK(countOf(bSeq, GT::Move) == 1 && countOf(bSeq, GT::Click) == 1);
+
+    // Down on empty space: no capture, no crash.
+    router.route({GT::Down, {999, 999}, {999, 999}, PB::Left});
+    CHECK(router.captured() == nullptr);
+    router.route({GT::Up, {999, 999}, {999, 999}, PB::Left}); // up with no capture
+    router.clear();
+}
+
 int main() { return mini::runAll(); }

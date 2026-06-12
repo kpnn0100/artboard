@@ -9,7 +9,7 @@ endif()
 
 # ── Platform-free core (no adapter, no OS calls) ──
 file(GLOB_RECURSE ARTBOARD_CORE CONFIGURE_DEPENDS
-     src/core/*.cpp src/anim/*.cpp src/render/*.cpp src/scene/*.cpp)
+     src/core/*.cpp src/anim/*.cpp src/render/*.cpp src/scene/*.cpp src/input/*.cpp)
 
 add_library(artboard_core STATIC ${ARTBOARD_CORE})
 target_include_directories(artboard_core PUBLIC src include)

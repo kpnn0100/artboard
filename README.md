@@ -29,7 +29,10 @@ same way an OS HAL abstracts hardware.
 ```
 src/core/      Geometry (Point/Size/Rect/Transform), Color           — value types
 src/anim/      Easing, Animation, AnimatedProperty                   — abstract animation
-src/render/    IRenderTarget (the HAL), RecordingTarget (test/serialize)
+src/render/    IRenderTarget (the OUTPUT HAL), RecordingTarget (test/serialize)
+src/input/     RawPointer/Gesture, GestureRecognizer, InputRouter    — the INPUT HAL
+               (adapter feeds raw down/up/move+button; core derives click /
+               double-click / right-click / drag / drop, then hit-tests + routes)
 src/scene/     Drawable + shapes (Rectangle, Line, Polyline, Ellipse,
                Path[bezier/spline], Text), Artboard (scene root)
 src/adapter/web/   Canvas2DTarget — the web adapter (WASM + Canvas2D)

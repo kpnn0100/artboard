@@ -19,6 +19,25 @@ package anim {
   AnimatedProperty *--> Animation
 }
 
+package input {
+  enum PointerButton
+  class RawPointer { kind; pos; button; timeMs }
+  class Gesture { type(Click/DoubleClick/RightClick/Drag/Drop/...); pos; start; button }
+  class GestureRecognizer { +feed(RawPointer)\n+setSink(fn) }
+  interface InputTarget { +hitTest(Point); +onGesture(Gesture) }
+  class RectTarget
+  class InputRouter { +add(InputTarget); +route(Gesture) }
+  GestureRecognizer ..> Gesture : synthesizes from RawPointer
+  RectTarget ..|> InputTarget
+  InputRouter o--> "*" InputTarget
+  InputRouter ..> Gesture : routes (capture + hit-test)
+}
+note bottom of GestureRecognizer
+  Adapter feeds raw Down/Up/Move+button;
+  recognizer derives click/double/right/drag/drop.
+  Symmetric with the render HAL.
+end note
+
 package render {
   interface IRenderTarget {
     +save()/restore()
