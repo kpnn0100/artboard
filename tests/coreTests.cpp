@@ -196,6 +196,11 @@ TEST(Artboard_background_children_and_onframe)
     ab.setOnFrame([&](double) { ++frames; });
     ab.add(std::make_shared<Rectangle>(Rect{0, 0, 10, 10}, Paint::filled(Color::rgba(255, 0, 0))));
     CHECK(ab.childCount() == 1);
+    ab.add(std::make_shared<Rectangle>(Rect{0, 0, 1, 1}, Paint::filled(Color::rgba(0, 255, 0))));
+    CHECK(ab.childCount() == 2);
+    ab.clear();
+    CHECK(ab.childCount() == 0);
+    ab.add(std::make_shared<Rectangle>(Rect{0, 0, 10, 10}, Paint::filled(Color::rgba(255, 0, 0))));
     ab.render(t, 16.0);
     CHECK(frames == 1);
     CHECK(t.count(K::FillPath) == 2); // background + child

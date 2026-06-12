@@ -22,6 +22,7 @@ namespace artboard
         void setBackground(const Color &c) { mBackground = c; mHasBackground = true; }
 
         void add(std::shared_ptr<Drawable> d) { mChildren.push_back(std::move(d)); }
+        void clear() { mChildren.clear(); }
         int childCount() const { return (int)mChildren.size(); }
 
         /** Per-frame animation hook: called with the current time before drawing. */
