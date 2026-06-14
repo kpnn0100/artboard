@@ -45,6 +45,7 @@ namespace artboard
 
         /** this * other (apply `other` first, then `this`). */
         Transform mul(const Transform &o) const;
+        Transform inverse() const;
         Point apply(const Point &p) const { return Point{a * p.x + c * p.y + e, b * p.x + d * p.y + f}; }
 
         Transform &translate(double tx, double ty) { *this = mul(translation(tx, ty)); return *this; }

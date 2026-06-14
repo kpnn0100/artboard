@@ -16,3 +16,8 @@
 #include "../../src/scene/Drawable.h"
 #include "../../src/scene/Shapes.h"
 #include "../../src/scene/Artboard.h"
+#include "../../src/ui/Property.h"
+#include "../../src/ui/InputController.h"
+#include "../../src/ui/Segment.h"
+#include "../../src/ui/Theme.h"
+#include "../../src/ui/Controls.h"

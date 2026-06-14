@@ -24,6 +24,14 @@ TEST(Transform_rotation_and_mul)
     CHECK_NEAR(q.x, 5.0, 1e-9);
     CHECK_NEAR(q.y, 7.0, 1e-9);
 }
+TEST(Transform_inverse)
+{
+    Transform t = Transform::translation(10, 20).mul(Transform::scaling(2, 4));
+    Point p = t.apply(Point{3, 5});
+    Point original = t.inverse().apply(p);
+    CHECK_NEAR(original.x, 3.0, 1e-9);
+    CHECK_NEAR(original.y, 5.0, 1e-9);
+}
 TEST(Rect_helpers)
 {
     Rect r(1, 2, 10, 20);
@@ -90,6 +98,50 @@ TEST(AnimatedProperty_lifecycle)
 
 // ───────────────────────── render + scene ─────────────────────────
 using K = DrawOp::Kind;
+
+namespace
+{
+    class BoxSegment : public Segment
+    {
+    public:
+        explicit BoxSegment(const Color &fillColor) : mFill(fillColor) {}
+
+    protected:
+        void onPaint(IRenderTarget &t) const override
+        {
+            t.beginPath();
+            t.moveTo(0, 0);
+            t.lineTo(width.value(), 0);
+            t.lineTo(width.value(), height.value());
+            t.lineTo(0, height.value());
+            t.closePath();
+            t.setFill(mFill);
+            t.fillPath();
+        }
+
+    private:
+        Color mFill;
+    };
+
+    class LoggingController : public InputController
+    {
+    public:
+        std::vector<Gesture::Type> gestures;
+        std::vector<KeyEvent::Type> keys;
+
+        bool onGesture(Segment &, const Gesture &gesture, const Point &) override
+        {
+            gestures.push_back(gesture.type);
+            return true;
+        }
+
+        bool onKey(Segment &, const KeyEvent &event) override
+        {
+            keys.push_back(event.type);
+            return true;
+        }
+    };
+}
 
 TEST(Rectangle_sharp_and_rounded)
 {
@@ -181,6 +233,141 @@ TEST(Drawable_visibility)
     r.visible = false;
     r.render(t);
     CHECK(t.ops().empty());  // hidden -> nothing recorded
+}
+
+TEST(Segment_recursive_render_and_animation)
+{
+    RecordingTarget t;
+
+    auto parent = std::make_shared<BoxSegment>(Color::rgba(255, 0, 0));
+    parent->x.set(10);
+    parent->y.set(20);
+    parent->width.set(100);
+    parent->height.set(50);
+
+    auto child = std::make_shared<BoxSegment>(Color::rgba(0, 255, 0));
+    child->x.set(3);
+    child->y.set(4);
+    child->width.set(8);
+    child->height.set(9);
+    child->x.animateTo(13, 100.0, Easing::Linear, 0.0);
+    child->advance(50.0);
+
+    parent->addChild(child);
+    parent->render(t);
+
+    std::vector<Transform> transforms;
+    for (const auto &op : t.ops())
+        if (op.kind == K::SetTransform)
+            transforms.push_back(op.transform);
+
+    CHECK(transforms.size() == 2);
+    CHECK_NEAR(transforms[0].e, 10.0, 1e-9);
+    CHECK_NEAR(transforms[0].f, 20.0, 1e-9);
+    CHECK_NEAR(transforms[1].e, 18.0, 1e-9);
+    CHECK_NEAR(transforms[1].f, 24.0, 1e-9);
+}
+
+TEST(Segment_focus_capture_and_key_dispatch)
+{
+    auto root = std::make_shared<BoxSegment>(Color::rgba(0, 0, 0));
+    root->width.set(200);
+    root->height.set(200);
+
+    auto left = std::make_shared<BoxSegment>(Color::rgba(255, 0, 0));
+    left->width.set(20);
+    left->height.set(20);
+    left->focusable = true;
+    left->focusIndex = 1;
+    auto leftController = std::make_shared<LoggingController>();
+    left->setInputController(leftController);
+
+    auto right = std::make_shared<BoxSegment>(Color::rgba(0, 255, 0));
+    right->x.set(40);
+    right->width.set(20);
+    right->height.set(20);
+    right->focusable = true;
+    right->focusIndex = 1;
+    auto rightController = std::make_shared<LoggingController>();
+    right->setInputController(rightController);
+
+    root->addChild(left);
+    root->addChild(right);
+
+    root->onGesture({Gesture::Type::Down, {5, 5}, {5, 5}, PointerButton::Left});
+    root->onGesture({Gesture::Type::Drag, {100, 100}, {5, 5}, PointerButton::Left});
+    root->onGesture({Gesture::Type::Drop, {100, 100}, {5, 5}, PointerButton::Left});
+    CHECK(left->hasFocus());
+    CHECK(!right->hasFocus());
+    CHECK(leftController->gestures.size() == 3);
+    CHECK(leftController->gestures[0] == Gesture::Type::Down);
+    CHECK(leftController->gestures[1] == Gesture::Type::Drag);
+    CHECK(leftController->gestures[2] == Gesture::Type::Drop);
+
+    root->onGesture({Gesture::Type::Down, {45, 5}, {45, 5}, PointerButton::Left});
+    CHECK(!left->hasFocus());
+    CHECK(right->hasFocus());
+    CHECK(Segment::focusedInGroup(1) == right.get());
+
+    root->dispatchKey({KeyEvent::Type::Down, 65, "a"});
+    CHECK(rightController->keys.size() == 1);
+    CHECK(rightController->keys[0] == KeyEvent::Type::Down);
+}
+
+TEST(Basic_controls_composition_and_interaction)
+{
+    Theme theme = Theme::basicTheme();
+
+    auto root = std::make_shared<BoxSegment>(Color::rgba(8, 8, 8));
+    root->width.set(400.0);
+    root->height.set(300.0);
+
+    auto slider = std::make_shared<Slider>(theme.slider);
+    slider->setRange(0.0, 100.0);
+    slider->x.set(10.0);
+    slider->y.set(10.0);
+    slider->width.set(200.0);
+    root->addChild(slider);
+    root->onGesture({Gesture::Type::Down, {60, 20}, {60, 20}, PointerButton::Left});
+    CHECK(slider->value() > 24.0 && slider->value() < 26.0);
+    slider->requestFocus();
+    root->dispatchKey({KeyEvent::Type::Down, 39, ""});
+    CHECK(slider->value() > 29.0 && slider->value() < 31.0);
+
+    auto checkbox = std::make_shared<Checkbox>("Bypass", theme.checkbox);
+    checkbox->x.set(10.0);
+    checkbox->y.set(50.0);
+    root->addChild(checkbox);
+    root->onGesture({Gesture::Type::Click, {15, 55}, {15, 55}, PointerButton::Left});
+    CHECK(checkbox->checked());
+
+    auto textBox = std::make_shared<TextBox>(theme.textBox);
+    textBox->x.set(10.0);
+    textBox->y.set(90.0);
+    textBox->placeholder = "Name";
+    root->addChild(textBox);
+    root->onGesture({Gesture::Type::Down, {15, 100}, {15, 100}, PointerButton::Left});
+    root->dispatchKey({KeyEvent::Type::Text, 0, "A"});
+    root->dispatchKey({KeyEvent::Type::Text, 0, "B"});
+    root->dispatchKey({KeyEvent::Type::Down, 8, ""});
+    CHECK(textBox->text == "A");
+
+    auto button = std::make_shared<Button>("Apply", theme.button);
+    button->x.set(10.0);
+    button->y.set(140.0);
+    int clicks = 0;
+    button->onClick = [&]() { ++clicks; };
+    root->addChild(button);
+    root->onGesture({Gesture::Type::Down, {15, 145}, {15, 145}, PointerButton::Left});
+    root->onGesture({Gesture::Type::Click, {15, 145}, {15, 145}, PointerButton::Left});
+    button->requestFocus();
+    root->dispatchKey({KeyEvent::Type::Down, 13, ""});
+    CHECK(clicks == 2);
+
+    RecordingTarget t;
+    slider->render(t);
+    CHECK(slider->childCount() == 3);
+    CHECK(t.count(K::SetTransform) >= 3);
 }
 
 TEST(Artboard_background_children_and_onframe)

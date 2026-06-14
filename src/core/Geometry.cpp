@@ -21,4 +21,20 @@ namespace artboard
             a * o.e + c * o.f + e,
             b * o.e + d * o.f + f};
     }
+
+    Transform Transform::inverse() const
+    {
+        const double det = a * d - b * c;
+        if (std::abs(det) < 1e-12)
+            return Transform::identity();
+
+        const double invDet = 1.0 / det;
+        return Transform{
+            d * invDet,
+            -b * invDet,
+            -c * invDet,
+            a * invDet,
+            (c * f - d * e) * invDet,
+            (b * e - a * f) * invDet};
+    }
 }

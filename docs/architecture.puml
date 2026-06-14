@@ -1,98 +1,114 @@
-@startuml artboard_architecture
-title Arstro Artboard — Architecture (v0.1.0)
+@startuml
+title Arstro Artboard Architecture
 skinparam classAttributeIconSize 0
 hide empty members
 
 package core {
-  class Point  { x; y }
-  class Size   { w; h }
-  class Rect   { x; y; w; h }
-  class Transform { a;b;c;d;e;f\n+identity/translate/scale/rotate\n+mul(); apply(Point) }
-  class Color  { r;g;b;a\n+rgba(); hex() }
+  class Point
+  class Size
+  class Rect
+  class Transform
+  class Color
 }
 
 package anim {
   enum Easing
-  class Animation { from; to; durationMs; easing\n+value(elapsed); finished(elapsed) }
-  class AnimatedProperty { +animateTo(target,dur,easing)\n+update(nowMs); value() }
+  class Animation
+  class AnimatedProperty
   Animation ..> Easing
   AnimatedProperty *--> Animation
 }
 
-package input {
-  enum PointerButton
-  class RawPointer { kind; pos; button; timeMs }
-  class Gesture { type(Click/DoubleClick/RightClick/Drag/Drop/...); pos; start; button }
-  class GestureRecognizer { +feed(RawPointer)\n+setSink(fn) }
-  interface InputTarget { +hitTest(Point); +onGesture(Gesture) }
-  class RectTarget
-  class InputRouter { +add(InputTarget); +route(Gesture) }
-  GestureRecognizer ..> Gesture : synthesizes from RawPointer
-  RectTarget ..|> InputTarget
-  InputRouter o--> "*" InputTarget
-  InputRouter ..> Gesture : routes (capture + hit-test)
-}
-note bottom of GestureRecognizer
-  Adapter feeds raw Down/Up/Move+button;
-  recognizer derives click/double/right/drag/drop.
-  Symmetric with the render HAL.
-end note
-
 package render {
-  interface IRenderTarget {
-    +save()/restore()
-    +setTransform(Transform)
-    +setFill(Color)/setStroke(Color,w)
-    +beginPath()/moveTo/lineTo/quadTo/cubicTo/closePath
-    +fillPath()/strokePath()
-    +drawText(s,x,y,size)
-  }
-  class RecordingTarget {
-    +ops() : vector<DrawOp>
-  }
+  interface IRenderTarget
+  class RecordingTarget
   RecordingTarget ..|> IRenderTarget
 }
 
+package input {
+  enum PointerButton
+  class RawPointer
+  class Gesture
+  class GestureRecognizer
+  interface InputTarget
+  class InputRouter
+  GestureRecognizer ..> RawPointer
+  GestureRecognizer ..> Gesture
+  InputRouter o--> InputTarget
+}
+
 package scene {
-  abstract class Drawable {
-    +transform : Transform
-    +visible; opacity
-    +render(IRenderTarget&)
-    #{abstract} onDraw(IRenderTarget&)
-  }
+  abstract class Drawable
+  class Artboard
   class Rectangle
   class Line
   class Polyline
   class Ellipse
   class Path
   class Text
-  class Artboard {
-    +size; background
-    +add(Drawable)
-    +render(IRenderTarget&, nowMs)
-  }
-  Rectangle  --|> Drawable
-  Line       --|> Drawable
-  Polyline   --|> Drawable
-  Ellipse    --|> Drawable
-  Path       --|> Drawable
-  Text       --|> Drawable
-  Artboard o--> "*" Drawable
+  Drawable ..> IRenderTarget
+  Rectangle --|> Drawable
+  Line --|> Drawable
+  Polyline --|> Drawable
+  Ellipse --|> Drawable
+  Path --|> Drawable
+  Text --|> Drawable
+  Artboard o--> Drawable
 }
 
-Drawable ..> IRenderTarget : draws via
-Drawable ..> Transform
+package ui {
+  class Property
+  class KeyEvent
+  abstract class InputController
+  class Theme
+  class Segment
+  class RectangleSegment
+  class CircleSegment
+  class LabelSegment
+  class AbstractSlider
+  class Slider
+  class Button
+  class Checkbox
+  class TextBox
 
-package "adapter/web" <<adapter>> {
-  class Canvas2DTarget {
-    ' maps IRenderTarget -> HTML Canvas2D (Emscripten EM_JS)
-  }
+  Segment --|> Drawable
+  Segment ..|> InputTarget
+  Segment *--> Property
+  Segment o--> Segment
+  Segment o--> InputController
+  RectangleSegment --|> Segment
+  CircleSegment --|> Segment
+  LabelSegment --|> Segment
+  Slider --|> Segment
+  Slider --|> AbstractSlider
+  Button --|> Segment
+  Checkbox --|> Segment
+  TextBox --|> Segment
+  Theme ..> Slider
+  Theme ..> Button
+  Theme ..> Checkbox
+  Theme ..> TextBox
+}
+
+package "adapter/web" {
+  class Canvas2DTarget
   Canvas2DTarget ..|> IRenderTarget
 }
-note bottom of Canvas2DTarget
-  Device adapter for the web target.
-  Future adapters (framebuffer, native,
-  video-frame) implement the same HAL.
+
+Segment ..> KeyEvent
+Segment ..> Gesture
+Segment ..> Transform
+Property *--> AnimatedProperty
+
+note right of Segment
+Composite UI node.
+Owns animated layout properties,
+shared focus, and recursive input.
+end note
+
+note right of Slider
+Concrete slider uses child segments:
+track rectangle, fill rectangle, thumb circle.
 end note
 
 @enduml

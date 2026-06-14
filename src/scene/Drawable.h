@@ -19,7 +19,7 @@ namespace artboard
         bool visible = true;
 
         /** Render under `parent` transform (parent * local). No-op if hidden. */
-        void render(IRenderTarget &t, const Transform &parent = Transform::identity()) const
+        virtual void render(IRenderTarget &t, const Transform &parent = Transform::identity()) const
         {
             if (!visible)
                 return;
