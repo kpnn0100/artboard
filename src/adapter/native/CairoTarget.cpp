@@ -19,6 +19,13 @@ namespace artboard
         cairo_set_matrix(mContext, &matrix);
     }
 
+    void CairoTarget::clipRect(double x, double y, double w, double h)
+    {
+        cairo_new_path(mContext);
+        cairo_rectangle(mContext, x, y, w, h);
+        cairo_clip(mContext);
+    }
+
     void CairoTarget::setFill(const Color &c)
     {
         cairo_set_source_rgba(mContext, c.r, c.g, c.b, c.a);

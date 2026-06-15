@@ -36,8 +36,10 @@ src/input/     RawPointer/Gesture, GestureRecognizer, InputRouter    — the INP
                double-click / right-click / drag / drop, then hit-tests + routes)
 src/scene/     Drawable + shapes (Rectangle, Line, Polyline, Ellipse,
                Path[bezier/spline], Text), Artboard (scene root)
-src/ui/        Property, InputController, Segment, Theme,
-               Rectangle/Circle/Label segments, Button/Slider/Checkbox/TextBox
+src/ui/base/      Segment, InputController, Property, Theme, AbstractSlider,
+                  Rectangle/Circle/Label segments     — foundations (one class per file)
+src/ui/concrete/  Button, Slider, Checkbox, TextBox, Knob, ToggleSwitch,
+                  ProgressBar, ComboBox, TabView, ScrollView, LineGraph — controls/widgets
 src/adapter/web/   Canvas2DTarget — the web adapter (WASM + Canvas2D)
 include/artboard/artboard.h   aggregate header
 tests/         unit tests (100% core coverage) + wasm/node integration

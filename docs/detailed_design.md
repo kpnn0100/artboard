@@ -35,8 +35,63 @@
 ### Responsibilities
 
 - Store the current scalar value.
-- Start an animation toward a target value.
+- Start an animation toward a target value (simple `animateTo`, or a full `Tween`).
 - Advance the value at a supplied time.
+
+## 2a. `anim::Easing` / `applyEasing`
+
+A library of easing curves as a pure function `applyEasing(Easing, t)` with `t` clamped to `[0,1]`.
+Families: linear; quad/cubic/quart (in/out/in-out); sine, expo (in/out/in-out); back, elastic
+(in/out/in-out, may overshoot mid-curve but pinned to `0` at `t=0` and `1` at `t=1`); bounce
+(in/out/in-out). No backend code; trivially unit-testable.
+
+## 2b. `anim::Tween`
+
+A pure value type describing a whole scalar animation.
+
+### Fields
+
+- `double from, to, durationMs, delayMs`
+- `Easing easing`
+- `int repeat` (additional cycles; `-1` = infinite)
+- `bool yoyo` (reverse direction on odd cycles)
+
+### Operations
+
+- `at(elapsedMs)` — sampled value: holds `from` during `delayMs`, eases across each cycle, applies
+  yoyo on odd cycles, and clamps to the final value once finished.
+- `totalMs()` — `delayMs + durationMs * (repeat+1)`; `+inf` when infinite.
+- `finished(elapsedMs)` — `false` for infinite tweens; otherwise `elapsedMs >= totalMs()`.
+
+Purity means the same `Tween` yields identical output for live UI and offline rendering.
+
+## 2c. `anim::AnimatedProperty`
+
+Holds a live scalar, an optional active `Tween`, and a start timestamp.
+
+### Operations
+
+- `set(v)` — snap, cancel any animation.
+- `animateTo(target, durationMs, easing, nowMs)` — back-compatible single-shot; `from` is current.
+- `animate(tween, nowMs, onComplete)` — full control via a `Tween`; fires `onComplete` once when the
+  (finite) tween finishes.
+- `update(nowMs)` — recompute the value from the tween; deactivate + fire `onComplete` at the end.
+
+## 2d. `anim::Animator`
+
+A callback-based timeline that lets an application animate **any** value without a `Segment`.
+
+### Design
+
+- Owns tracks (`std::shared_ptr<Track>`), each holding a `Tween`, a lazily-captured start time, an
+  `onUpdate(double)` callback, and an optional `onComplete()`.
+- `tween(from, to, durationMs)` returns a fluent `Handle` (`easing/delay/repeat/yoyo/onUpdate/
+  onComplete`) so a complete animation reads as one expression.
+- `advance(nowMs)` ticks every track (lazily stamping its start on first tick), invokes `onUpdate`
+  with the sampled value, fires `onComplete` for finished tracks, and erases them.
+- `clear()` drops all tracks; `activeCount()` reports the live track count.
+- Depends only on `Tween` + `std::function`; SRP (timing/dispatch only), OCP (new behavior via
+  callbacks not new core branches), DIP (no backend, no UI coupling).
 
 ## 3. `InputController`
 
@@ -168,7 +223,79 @@ types without creating a deep inheritance chain.
 - Caret x-position uses estimated text width.
 - Selection, cursor movement, and clipboard behavior are not implemented yet.
 
-## 11. Traceability to Requirements
+## 11. Clipping
+
+### HAL
+
+- `IRenderTarget::clipRect(x, y, w, h)` intersects the current clip with the rectangle in the
+  current transform space; it is scoped by `save()`/`restore()`.
+- `RecordingTarget` records it as `DrawOp::Kind::ClipRect` with `args[0..3] = x,y,w,h`.
+- `Canvas2DTarget` maps it to `ctx.beginPath(); ctx.rect(...); ctx.clip()`.
+- `CairoTarget` maps it to `cairo_rectangle(...); cairo_clip()`.
+
+### Segment wiring
+
+- `Segment::render` is unchanged for non-clipping segments (same op stream). When
+  `clipToBounds == true`, children are rendered inside an extra `save()` → `setTransform(world)`
+  → `clipRect(localBounds)` → … → `restore()` bracket, so the clip applies to the whole subtree
+  and is released afterwards.
+
+## 12. Extended widgets (`ui/concrete/`)
+
+File layout: the `ui` module is one class per file, split into `ui/base/` (foundations +
+`AbstractSlider` + the reusable `RectangleSegment`/`CircleSegment`/`LabelSegment`) and
+`ui/concrete/` (the finished controls — `Button`, `Slider`, `Checkbox`, `TextBox`, plus the
+extended widgets below).
+
+Shared helpers live in `scene` (`Shapes.h`) so no control duplicates them: `drawRoundedRect(target,
+rect, radius, paint)` and `drawCircle(target, cx, cy, r, paint)`. `isConfirmKey(KeyEvent)` is an
+inline helper in `base/InputController.h`.
+
+### 12.1 `Knob`
+
+- Extends `Segment` + `AbstractSlider`. `sensitivity` px maps vertical drag to value delta;
+  `Left`/`Right` keys step. Fires `onChange(value)`.
+- `onPaint` draws the dial, a 270° arc track (sampled), a value arc up to the normalized value,
+  and the indicator line. Optional `label`.
+
+### 12.2 `ToggleSwitch`
+
+- Boolean `on()`. `Click`/confirm toggles, animates `mThumb` (`AnimatedProperty`) toward 0/1,
+  fires `onChange(bool)`. `advance(nowMs)` ticks the thumb.
+- `onPaint` draws the rounded track (color lerps with thumb position) and the moving thumb.
+
+### 12.3 `ProgressBar`
+
+- Non-interactive; `value()` in `[0,1]`. `onPaint` draws track + clamped fill. `hitTestSelf`
+  returns false (input passes through).
+
+### 12.4 `ComboBox`
+
+- `options`, `selectedIndex`, `isOpen`. `Click` on the field toggles open; when open,
+  `ensureRows()` creates one child `Segment` per option below the field; clicking a row selects it,
+  closes the popup, and fires `onChange(index)`. Rows are removed when closed.
+- `onPaint` draws the field, the selected text, and a caret glyph.
+
+### 12.5 `TabView`
+
+- `addPage(title, segment)` appends a page; `selectedIndex` chooses the visible page (others have
+  `visible=false`). Tab headers are child hit regions; `Click` on a header selects it and fires
+  `onChange(index)`. The active page is positioned under the tab strip.
+
+### 12.6 `ScrollView`
+
+- `setContent(segment)`, `contentHeight`. `clipToBounds = true`; the content child is translated by
+  `-offset`. `Drag` on the body and `Drag` on the scrollbar thumb both change `offset`, clamped to
+  `[0, max(0, contentHeight - height)]`.
+- `onPaint` draws the viewport background + a scrollbar track/thumb sized to the visible fraction.
+
+### 12.7 `LineGraph`
+
+- Non-interactive. `setSeries(values)`, `setRange(min,max)`. `onPaint` draws background, horizontal
+  grid lines, an optional filled area, and the series polyline mapped into the bounds. Empty or
+  single-point series draw only the frame.
+
+## 13. Traceability to Requirements
 
 - FR-3 and FR-10 map to `Segment`.
 - FR-4 maps to `Property` and `AnimatedProperty`.
@@ -176,3 +303,7 @@ types without creating a deep inheritance chain.
 - FR-7 maps to `Theme` and the style structs.
 - FR-8 maps to `Button`, `Slider`, `Checkbox`, and `TextBox`.
 - FR-9 maps to the split between `AbstractSlider` and `Slider`.
+- FR-11 maps to `IRenderTarget::clipRect`, `RecordingTarget`, the two adapters, and
+  `Segment::clipToBounds`.
+- FR-12 maps to `Knob`, `ToggleSwitch`, `ProgressBar`, `ComboBox`, `TabView`, `ScrollView`, and
+  `LineGraph`, one class per file under `ui/concrete/`.

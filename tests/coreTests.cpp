@@ -57,17 +57,72 @@ TEST(Color_rgba_and_hex)
 }
 
 // ───────────────────────── anim/Easing ─────────────────────────
-TEST(Easing_all_curves_and_clamp)
+TEST(Easing_endpoints_pinned_for_all_curves)
 {
-    CHECK_NEAR(applyEasing(Easing::Linear, 0.5), 0.5, 1e-9);
-    CHECK_NEAR(applyEasing(Easing::EaseInQuad, 0.5), 0.25, 1e-9);
-    CHECK_NEAR(applyEasing(Easing::EaseOutQuad, 0.5), 0.75, 1e-9);
-    CHECK_NEAR(applyEasing(Easing::EaseInOutCubic, 0.0), 0.0, 1e-9);
-    CHECK_NEAR(applyEasing(Easing::EaseInOutCubic, 1.0), 1.0, 1e-9);
-    CHECK(applyEasing(Easing::EaseInOutCubic, 0.75) > 0.5);
+    // Every curve is 0 at t=0 and 1 at t=1. Iterating the endpoints also exercises
+    // the t<0.5 / t>=0.5 branch of every in-out curve and the t==0 / t==1 guards of
+    // the expo/elastic curves.
+    const Easing all[] = {
+        Easing::Linear,
+        Easing::EaseInQuad, Easing::EaseOutQuad, Easing::EaseInOutQuad,
+        Easing::EaseInCubic, Easing::EaseOutCubic, Easing::EaseInOutCubic,
+        Easing::EaseInQuart, Easing::EaseOutQuart, Easing::EaseInOutQuart,
+        Easing::EaseInSine, Easing::EaseOutSine, Easing::EaseInOutSine,
+        Easing::EaseInExpo, Easing::EaseOutExpo, Easing::EaseInOutExpo,
+        Easing::EaseInBack, Easing::EaseOutBack, Easing::EaseInOutBack,
+        Easing::EaseInElastic, Easing::EaseOutElastic, Easing::EaseInOutElastic,
+        Easing::EaseInBounce, Easing::EaseOutBounce, Easing::EaseInOutBounce};
+    for (Easing e : all)
+    {
+        CHECK_NEAR(applyEasing(e, 0.0), 0.0, 1e-9);
+        CHECK_NEAR(applyEasing(e, 1.0), 1.0, 1e-9);
+    }
     CHECK_NEAR(applyEasing(Easing::Linear, -1.0), 0.0, 1e-9); // clamp low
     CHECK_NEAR(applyEasing(Easing::Linear, 2.0), 1.0, 1e-9);  // clamp high
-    CHECK_NEAR(applyEasing((Easing)99, 0.3), 0.3, 1e-9);      // defensive default
+    CHECK_NEAR(applyEasing((Easing)999, 0.3), 0.3, 1e-9);     // defensive default
+}
+TEST(Easing_midpoints_and_branches)
+{
+    // Known closed-form midpoints.
+    CHECK_NEAR(applyEasing(Easing::EaseInQuad, 0.5), 0.25, 1e-9);
+    CHECK_NEAR(applyEasing(Easing::EaseOutQuad, 0.5), 0.75, 1e-9);
+    CHECK_NEAR(applyEasing(Easing::EaseInOutQuad, 0.25), 0.125, 1e-9);
+    CHECK_NEAR(applyEasing(Easing::EaseInOutQuad, 0.75), 0.875, 1e-9);
+    CHECK_NEAR(applyEasing(Easing::EaseInCubic, 0.5), 0.125, 1e-9);
+    CHECK_NEAR(applyEasing(Easing::EaseOutCubic, 0.5), 0.875, 1e-9);
+    CHECK_NEAR(applyEasing(Easing::EaseInOutCubic, 0.25), 0.0625, 1e-9);
+    CHECK(applyEasing(Easing::EaseInOutCubic, 0.75) > 0.5);
+    CHECK_NEAR(applyEasing(Easing::EaseInQuart, 0.5), 0.0625, 1e-9);
+    CHECK_NEAR(applyEasing(Easing::EaseOutQuart, 0.5), 0.9375, 1e-9);
+    CHECK(applyEasing(Easing::EaseInOutQuart, 0.25) < 0.1);
+    CHECK(applyEasing(Easing::EaseInOutQuart, 0.75) > 0.9);
+    // sine
+    CHECK_NEAR(applyEasing(Easing::EaseInOutSine, 0.5), 0.5, 1e-9);
+    CHECK(applyEasing(Easing::EaseInSine, 0.5) < 0.5);
+    CHECK(applyEasing(Easing::EaseOutSine, 0.5) > 0.5);
+    // expo (else branches)
+    CHECK(applyEasing(Easing::EaseInExpo, 0.5) > 0.0 && applyEasing(Easing::EaseInExpo, 0.5) < 0.1);
+    CHECK(applyEasing(Easing::EaseOutExpo, 0.5) > 0.9);
+    CHECK(applyEasing(Easing::EaseInOutExpo, 0.25) < 0.1); // t<0.5 branch
+    CHECK(applyEasing(Easing::EaseInOutExpo, 0.75) > 0.9); // else branch
+    // back overshoot: EaseOutBack rises above 1 before settling
+    CHECK(applyEasing(Easing::EaseOutBack, 0.6) > 1.0);
+    CHECK(applyEasing(Easing::EaseInBack, 0.4) < 0.0);
+    CHECK(applyEasing(Easing::EaseInOutBack, 0.25) < 0.0); // t<0.5 branch
+    CHECK(applyEasing(Easing::EaseInOutBack, 0.75) > 1.0); // else branch
+    // elastic (else branches)
+    CHECK(applyEasing(Easing::EaseInElastic, 0.5) < 0.1);
+    CHECK(applyEasing(Easing::EaseOutElastic, 0.5) > 0.9);
+    CHECK(applyEasing(Easing::EaseInOutElastic, 0.25) != 0.0); // t<0.5 branch
+    CHECK(applyEasing(Easing::EaseInOutElastic, 0.75) != 1.0); // else branch
+    // bounce: hit all four segments of the helper via EaseOutBounce
+    CHECK(applyEasing(Easing::EaseOutBounce, 0.2) > 0.0);  // seg 1
+    CHECK(applyEasing(Easing::EaseOutBounce, 0.5) > 0.0);  // seg 2
+    CHECK(applyEasing(Easing::EaseOutBounce, 0.8) > 0.0);  // seg 3
+    CHECK(applyEasing(Easing::EaseOutBounce, 0.95) > 0.0); // seg 4
+    CHECK(applyEasing(Easing::EaseInBounce, 0.3) >= 0.0);
+    CHECK(applyEasing(Easing::EaseInOutBounce, 0.25) >= 0.0); // t<0.5 branch
+    CHECK(applyEasing(Easing::EaseInOutBounce, 0.75) <= 1.0); // else branch
 }
 
 // ───────────────────────── anim/Animation ─────────────────────────
@@ -94,6 +149,165 @@ TEST(AnimatedProperty_lifecycle)
     CHECK(!p.isAnimating());
     p.set(3.0);
     CHECK_NEAR(p.value(), 3.0, 1e-9);
+}
+
+// ───────────────────────── anim/Tween ─────────────────────────
+TEST(Tween_basic_and_finish)
+{
+    Tween t(0, 10, 100);
+    CHECK_NEAR(t.at(-5), 0.0, 1e-9);  // before start -> from
+    CHECK_NEAR(t.at(0), 0.0, 1e-9);
+    CHECK_NEAR(t.at(50), 5.0, 1e-9);  // linear midpoint
+    CHECK_NEAR(t.at(100), 10.0, 1e-9); // finished -> to
+    CHECK_NEAR(t.at(250), 10.0, 1e-9); // past end clamps
+    CHECK_NEAR(t.totalMs(), 100.0, 1e-9);
+    CHECK(t.finished(100));
+    CHECK(!t.finished(99));
+}
+TEST(Tween_delay_and_zero_duration)
+{
+    Tween d(0, 10, 100);
+    d.delayMs = 50;
+    CHECK_NEAR(d.at(25), 0.0, 1e-9);   // inside delay window
+    CHECK_NEAR(d.at(100), 5.0, 1e-9);  // 50ms into the 100ms tween
+    CHECK_NEAR(d.at(150), 10.0, 1e-9); // finished
+    CHECK_NEAR(d.totalMs(), 150.0, 1e-9);
+
+    Tween z(5, 9, 0); // zero duration -> snap to `to` once started
+    CHECK_NEAR(z.at(0), 5.0, 1e-9);    // local<=0 -> from
+    CHECK_NEAR(z.at(1), 9.0, 1e-9);    // duration<=0 -> to
+    CHECK(z.finished(0));
+}
+TEST(Tween_repeat_yoyo_infinite)
+{
+    Tween r(0, 10, 100);
+    r.repeat = 1; // two cycles
+    CHECK_NEAR(r.at(50), 5.0, 1e-9);   // cycle 0
+    CHECK_NEAR(r.at(150), 5.0, 1e-9);  // cycle 1 forward
+    CHECK_NEAR(r.at(200), 10.0, 1e-9); // finished, last cycle forward -> to
+    CHECK_NEAR(r.totalMs(), 200.0, 1e-9);
+
+    Tween y(0, 10, 100);
+    y.repeat = 1; y.yoyo = true;
+    CHECK_NEAR(y.at(125), 7.5, 1e-9);  // cycle 1 reversed: phase .25 -> .75
+    CHECK_NEAR(y.at(200), 0.0, 1e-9);  // finished, odd last cycle -> back to `from`
+
+    Tween y2(0, 10, 100);
+    y2.repeat = 2; y2.yoyo = true;     // three cycles, last one forward
+    CHECK_NEAR(y2.at(400), 10.0, 1e-9);
+
+    Tween inf(0, 10, 100);
+    inf.repeat = -1;
+    CHECK(!inf.finished(1e9));
+    CHECK(inf.totalMs() > 1e300);      // infinity
+    CHECK_NEAR(inf.at(100050), 5.0, 1e-9); // cycle 1000, phase .5
+}
+TEST(Tween_factory_helpers)
+{
+    Tween t = Tween::range(0, 1, 200).withEasing(Easing::EaseOutCubic).after(10).repeats(2).yoyoing();
+    CHECK_NEAR(t.from, 0.0, 1e-9);
+    CHECK_NEAR(t.to, 1.0, 1e-9);
+    CHECK_NEAR(t.durationMs, 200.0, 1e-9);
+    CHECK_NEAR(t.delayMs, 10.0, 1e-9);
+    CHECK(t.easing == Easing::EaseOutCubic);
+    CHECK(t.repeat == 2);
+    CHECK(t.yoyo);
+    Tween l = Tween::range(0, 1, 50).looping();
+    CHECK(l.repeat == -1);
+}
+TEST(AnimatedProperty_tween_and_onComplete)
+{
+    AnimatedProperty p(0.0);
+    int completed = 0;
+    p.animate(Tween(0, 10, 100), 1000.0, [&] { ++completed; });
+    CHECK_NEAR(p.value(), 0.0, 1e-9); // initialised to from
+    CHECK(p.isAnimating());
+    CHECK_NEAR(p.update(1050.0), 5.0, 1e-9);
+    CHECK(completed == 0);
+    CHECK_NEAR(p.update(1100.0), 10.0, 1e-9); // finished
+    CHECK(completed == 1);
+    CHECK(!p.isAnimating());
+    p.update(1200.0); // already inactive: no double-fire
+    CHECK(completed == 1);
+
+    // onComplete is dropped by set()
+    AnimatedProperty q(0.0);
+    int q_done = 0;
+    q.animate(Tween(0, 1, 100), 0.0, [&] { ++q_done; });
+    q.set(0.5);
+    q.update(1000.0);
+    CHECK(q_done == 0);
+
+    // animate without a completion callback still finishes cleanly
+    AnimatedProperty r(0.0);
+    r.animate(Tween(0, 1, 100), 0.0);
+    CHECK_NEAR(r.update(200.0), 1.0, 1e-9);
+    CHECK(!r.isAnimating());
+}
+TEST(Property_animate_tween_passthrough)
+{
+    Property p(0.0);
+    p.animate(Tween(0, 8, 100), 0.0);
+    CHECK(p.isAnimating());
+    CHECK_NEAR(p.update(50.0), 4.0, 1e-9);
+    CHECK_NEAR(p.update(100.0), 8.0, 1e-9);
+}
+
+// ───────────────────────── anim/Animator ─────────────────────────
+TEST(Animator_drives_value_and_completes)
+{
+    Animator anim;
+    double last = -1;
+    int done = 0;
+    anim.tween(0, 10, 100).easing(Easing::Linear)
+        .onUpdate([&](double v) { last = v; })
+        .onComplete([&] { ++done; });
+    CHECK(anim.activeCount() == 1);
+    anim.advance(0.0);   // lazy start
+    CHECK_NEAR(last, 0.0, 1e-9);
+    anim.advance(50.0);
+    CHECK_NEAR(last, 5.0, 1e-9);
+    CHECK(anim.activeCount() == 1); // not finished -> no erase
+    anim.advance(100.0);
+    CHECK_NEAR(last, 10.0, 1e-9);
+    CHECK(done == 1);
+    CHECK(anim.activeCount() == 0); // finished -> removed
+}
+TEST(Animator_no_callbacks_and_clear_and_loop)
+{
+    Animator anim;
+    // No onUpdate / no onComplete, instantaneous: still ticks + auto-removes.
+    anim.tween(0, 1, 0);
+    anim.advance(0.0);
+    CHECK(anim.activeCount() == 0);
+
+    // Infinite track never finishes.
+    anim.tween(0, 1, 100).loop();
+    anim.advance(0.0);
+    anim.advance(100000.0);
+    CHECK(anim.activeCount() == 1);
+
+    // clear() drops everything without firing completion.
+    anim.clear();
+    CHECK(anim.activeCount() == 0);
+}
+TEST(Animator_handle_chaining_covers_all_setters)
+{
+    Animator anim;
+    double v = 0;
+    int done = 0;
+    anim.tween(0, 1, 100)
+        .easing(Easing::EaseInOutSine)
+        .delay(10)
+        .repeat(1)
+        .yoyo(true)
+        .onUpdate([&](double x) { v = x; })
+        .onComplete([&] { ++done; });
+    anim.advance(0.0);
+    CHECK_NEAR(v, 0.0, 1e-9); // inside delay
+    anim.advance(10000.0);    // well past the end (delay 10 + 2*100)
+    CHECK(done == 1);
+    CHECK(anim.activeCount() == 0);
 }
 
 // ───────────────────────── render + scene ─────────────────────────
@@ -535,6 +749,385 @@ TEST(InputRouter_topmost_capture_and_miss)
     CHECK(router.captured() == nullptr);
     router.route({GT::Up, {999, 999}, {999, 999}, PB::Left}); // up with no capture
     router.clear();
+}
+
+// ───────────────────────── clip / clipToBounds ─────────────────────────
+TEST(RecordingTarget_clipRect_records)
+{
+    RecordingTarget rec;
+    rec.clipRect(1, 2, 30, 40);
+    CHECK(rec.count(K::ClipRect) == 1);
+    CHECK_NEAR(rec.ops()[0].args[0], 1.0, 1e-9);
+    CHECK_NEAR(rec.ops()[0].args[3], 40.0, 1e-9);
+}
+TEST(Segment_clipToBounds_emits_clip_around_children)
+{
+    auto root = std::make_shared<Segment>();
+    root->width.set(100);
+    root->height.set(50);
+    auto child = std::make_shared<RectangleSegment>();
+    child->width.set(40); child->height.set(40);
+    root->addChild(child);
+
+    RecordingTarget off;
+    root->render(off);
+    CHECK(off.count(K::ClipRect) == 0); // no clip by default
+
+    root->clipToBounds = true;
+    RecordingTarget on;
+    root->render(on);
+    CHECK(on.count(K::ClipRect) == 1); // clip wraps the child subtree
+}
+
+// ───────────────────────── widgets ─────────────────────────
+TEST(Knob_drag_keys_and_render)
+{
+    auto k = std::make_shared<Knob>();
+    k->label = "DRIVE";
+    double last = -1;
+    k->onChange = [&](double v) { last = v; };
+
+    // vertical drag up by 80px over sensitivity 160 -> +0.5 of [0,1]
+    k->onGesture({Gesture::Type::DragStart, {0, 0}, {0, 0}, PointerButton::Left});
+    k->onGesture({Gesture::Type::Drag, {0, -80}, {0, 0}, PointerButton::Left});
+    CHECK_NEAR(k->value(), 0.5, 1e-9);
+    CHECK_NEAR(last, 0.5, 1e-9);
+
+    // keyboard step (focused)
+    k->requestFocus();
+    k->dispatchKey({KeyEvent::Type::Down, 39}); // right -> +1/20
+    CHECK_NEAR(k->value(), 0.55, 1e-9);
+    k->dispatchKey({KeyEvent::Type::Down, 37}); // left -> -1/20
+    CHECK_NEAR(k->value(), 0.5, 1e-9);
+    CHECK(!k->dispatchKey({KeyEvent::Type::Down, 65})); // non-arrow ignored
+    k->onGesture({Gesture::Type::Click, {0, 0}, {0, 0}, PointerButton::Left}); // default branch
+
+    RecordingTarget rec;
+    k->render(rec);
+    CHECK(rec.count(K::StrokePath) >= 3); // track + value + indicator
+    CHECK(rec.count(K::DrawText) == 1);   // label
+
+    // value 0 + no label exercises the "no value arc" and "no label" branches
+    auto k0 = std::make_shared<Knob>();
+    RecordingTarget rec0;
+    k0->render(rec0);
+    CHECK(rec0.count(K::DrawText) == 0);
+}
+TEST(ToggleSwitch_toggle_animate_render)
+{
+    auto sw = std::make_shared<ToggleSwitch>();
+    int changes = 0; bool lastState = false;
+    sw->onChange = [&](bool on) { ++changes; lastState = on; };
+
+    sw->advance(0); // stamp time
+    RecordingTarget off; sw->render(off); // trackOff branch (t01==0)
+
+    sw->onGesture({Gesture::Type::Click, {10, 10}, {10, 10}, PointerButton::Left});
+    CHECK(sw->on());
+    CHECK(changes == 1 && lastState == true);
+    sw->advance(80);   // mid animation
+    sw->advance(200);  // settled at 1
+    RecordingTarget on; sw->render(on); // trackOn branch (t01>=0.5)
+    CHECK(on.count(K::FillPath) >= 1);
+
+    sw->onGesture({Gesture::Type::Down, {10, 10}, {10, 10}, PointerButton::Left}); // non-Click fallback
+    sw->requestFocus();
+    sw->dispatchKey({KeyEvent::Type::Down, 32}); // space toggles off
+    CHECK(!sw->on());
+    CHECK(changes == 2);
+    CHECK(!sw->dispatchKey({KeyEvent::Type::Down, 65})); // non-confirm ignored
+    sw->setOn(true);
+    CHECK(sw->on());
+}
+TEST(ProgressBar_value_clamp_and_render)
+{
+    auto p = std::make_shared<ProgressBar>();
+    p->setValue(0.5);
+    CHECK_NEAR(p->value(), 0.5, 1e-9);
+    RecordingTarget mid; p->render(mid);
+    CHECK(mid.count(K::FillPath) >= 2); // track + fill
+
+    p->setValue(-1); CHECK_NEAR(p->value(), 0.0, 1e-9); // clamp low
+    RecordingTarget zero; p->render(zero);              // no-fill branch
+    p->setValue(2); CHECK_NEAR(p->value(), 1.0, 1e-9);  // clamp high
+    CHECK(!p->hitTest({5, 5}));                          // input passes through
+}
+TEST(ComboBox_open_select_and_render)
+{
+    auto c = std::make_shared<ComboBox>();
+    c->setOptions({"Sine", "Saw", "Square"});
+    int picked = -1;
+    c->onChange = [&](int i) { picked = i; };
+
+    RecordingTarget closed; c->render(closed);
+    CHECK(!c->isOpen());
+
+    c->onGesture({Gesture::Type::Click, {10, 10}, {10, 10}, PointerButton::Left}); // open
+    CHECK(c->isOpen());
+    RecordingTarget open; c->render(open); // popup + rows + selected highlight
+    CHECK(open.count(K::DrawText) >= 4);   // field + 3 rows
+
+    // click row 1 (Saw): y in popup band
+    c->onGesture({Gesture::Type::Click, {10, 32 + 28 + 5}, {0, 0}, PointerButton::Left});
+    CHECK(c->selectedIndex() == 1);
+    CHECK(picked == 1);
+    CHECK(!c->isOpen());
+
+    // open then click the field area closes; open then click below rows closes
+    c->onGesture({Gesture::Type::Click, {10, 10}, {0, 0}, PointerButton::Left}); // open
+    c->onGesture({Gesture::Type::Click, {10, 5}, {0, 0}, PointerButton::Left});  // field -> close
+    CHECK(!c->isOpen());
+    c->onGesture({Gesture::Type::Click, {10, 10}, {0, 0}, PointerButton::Left}); // open
+    c->onGesture({Gesture::Type::Click, {10, 9999}, {0, 0}, PointerButton::Left}); // beyond -> close
+    CHECK(!c->isOpen());
+
+    // hitTest geometry (closed) + open-popup band + selection guards
+    CHECK(c->hitTest({5, 5}));        // field band
+    CHECK(!c->hitTest({-1, 5}));      // outside x
+    CHECK(!c->hitTest({5, 9999}));    // below field while closed
+    c->onGesture({Gesture::Type::Click, {10, 10}, {0, 0}, PointerButton::Left}); // open
+    CHECK(c->hitTest({10, 36}));      // inside the popup band
+    c->onGesture({Gesture::Type::Click, {10, 5}, {0, 0}, PointerButton::Left});  // close again
+    c->setSelectedIndex(2); CHECK(c->selectedIndex() == 2);
+    c->setSelectedIndex(99); CHECK(c->selectedIndex() == 2); // out of range ignored
+    c->setOptions({"only"}); CHECK(c->selectedIndex() == 0);  // shrink resets
+
+    auto empty = std::make_shared<ComboBox>();
+    RecordingTarget e; empty->render(e); // empty options branch
+    empty->onGesture({Gesture::Type::Down, {1, 1}, {1, 1}, PointerButton::Left}); // non-Click branch
+}
+TEST(TabView_pages_and_tab_clicks)
+{
+    auto tv = std::make_shared<TabView>();
+    auto p0 = std::make_shared<RectangleSegment>();
+    auto p1 = std::make_shared<RectangleSegment>();
+    int tab = -1;
+    tv->onChange = [&](int i) { tab = i; };
+    tv->addPage("One", p0);
+    tv->addPage("Two", p1);
+    CHECK(tv->pageCount() == 2);
+    CHECK(p0->visible && !p1->visible);
+
+    RecordingTarget rec; tv->render(rec);
+    CHECK(rec.count(K::DrawText) == 2); // two tab labels
+
+    // width 300, 2 tabs -> tw 150; click x=160 selects tab 1
+    tv->onGesture({Gesture::Type::Click, {160, 10}, {160, 10}, PointerButton::Left});
+    CHECK(tv->selectedIndex() == 1);
+    CHECK(tab == 1);
+    CHECK(!p0->visible && p1->visible);
+
+    tv->onGesture({Gesture::Type::Down, {160, 10}, {160, 10}, PointerButton::Left}); // non-Click branch
+    tv->setSelectedIndex(99); CHECK(tv->selectedIndex() == 1);  // ignored
+
+    auto empty = std::make_shared<TabView>();
+    RecordingTarget e; empty->render(e);                         // n==0 onPaint return
+    empty->onGesture({Gesture::Type::Click, {10, 10}, {10, 10}, PointerButton::Left}); // n==0 guard
+}
+TEST(ScrollView_clip_drag_and_thumb)
+{
+    auto sv = std::make_shared<ScrollView>();
+    sv->width.set(200); sv->height.set(200);
+    auto content = std::make_shared<RectangleSegment>();
+    content->width.set(180); content->height.set(400);
+    sv->setContent(content);
+    sv->setContentHeight(400);
+    CHECK_NEAR(sv->maxOffset(), 200.0, 1e-9);
+
+    RecordingTarget rec; sv->render(rec);
+    CHECK(rec.count(K::ClipRect) >= 1); // clipToBounds + scrollable
+
+    // content drag: drag up 40px -> offset 40
+    sv->onGesture({Gesture::Type::DragStart, {50, 50}, {50, 50}, PointerButton::Left});
+    sv->onGesture({Gesture::Type::Drag, {50, 10}, {50, 50}, PointerButton::Left});
+    CHECK_NEAR(sv->offset(), 40.0, 1e-9);
+    // drag far the other way clamps to 0
+    sv->onGesture({Gesture::Type::DragStart, {50, 50}, {50, 50}, PointerButton::Left});
+    sv->onGesture({Gesture::Type::Drag, {50, 400}, {50, 50}, PointerButton::Left});
+    CHECK_NEAR(sv->offset(), 0.0, 1e-9);
+    // thumb drag (x in scrollbar zone): scale = 400/200 = 2
+    sv->onGesture({Gesture::Type::DragStart, {195, 10}, {195, 10}, PointerButton::Left});
+    sv->onGesture({Gesture::Type::Drag, {195, 60}, {195, 10}, PointerButton::Left});
+    CHECK_NEAR(sv->offset(), 100.0, 1e-9);
+    // content drag past the end clamps to maxOffset (clamp-high branch)
+    sv->onGesture({Gesture::Type::DragStart, {50, 50}, {50, 50}, PointerButton::Left});
+    sv->onGesture({Gesture::Type::Drag, {50, -400}, {50, 50}, PointerButton::Left});
+    CHECK_NEAR(sv->offset(), 200.0, 1e-9);
+    sv->onGesture({Gesture::Type::Move, {50, 50}, {50, 50}, PointerButton::Left}); // non-drag fallback
+
+    // non-scrollable: maxOffset 0, onPaint skips the scrollbar branch
+    auto sv2 = std::make_shared<ScrollView>();
+    sv2->width.set(200); sv2->height.set(200);
+    sv2->setContent(std::make_shared<RectangleSegment>()); // replace path (clearChildren)
+    sv2->setContentHeight(100);
+    CHECK_NEAR(sv2->maxOffset(), 0.0, 1e-9);
+    RecordingTarget rec2; sv2->render(rec2);
+}
+TEST(LineGraph_series_and_modes)
+{
+    auto g = std::make_shared<LineGraph>();
+    g->setRange(-1, 1);
+    g->setGridLines(4);
+    g->setSeries({0.0, 0.5, -0.5, 1.0, -1.0});
+    RecordingTarget filled; g->render(filled);
+    CHECK(filled.count(K::FillPath) >= 2); // background + area fill
+    CHECK(filled.count(K::StrokePath) >= 4); // 3 grid lines + series line
+
+    g->setFilled(false);
+    RecordingTarget noFill; g->render(noFill);
+    CHECK(noFill.count(K::StrokePath) >= 4);
+
+    // span<=0 guard + still draws
+    auto g2 = std::make_shared<LineGraph>();
+    g2->setRange(1, 1);
+    g2->setSeries({1.0, 1.0});
+    RecordingTarget flat; g2->render(flat);
+
+    // empty + single-point series take the early-out
+    auto g3 = std::make_shared<LineGraph>();
+    g3->setSeries({});
+    RecordingTarget empty; g3->render(empty);
+    g3->setSeries({0.5});
+    RecordingTarget one; g3->render(one);
+    CHECK(!g3->hitTest({5, 5})); // non-interactive
+}
+
+// ───────────────── Segment base paths (guards/recursion/focus) ─────────────────
+TEST(Segment_core_paths)
+{
+    auto root = std::make_shared<Segment>();
+    root->width.set(100); root->height.set(100);
+    root->addChild(nullptr);            // null-child guard
+    CHECK(root->childCount() == 0);
+
+    auto child = std::make_shared<Segment>();
+    child->width.set(40); child->height.set(40);
+    root->addChild(child);
+    CHECK(root->hitTest({10, 10}));     // child hit (children loop)
+    CHECK(!root->hitTest({500, 500}));  // all miss -> self bounds false
+
+    root->advance(16);                  // recurses into child->advance
+    root->onGesture({Gesture::Type::Down, {60, 60}, {60, 60}, PointerButton::Left}); // topmostChildAt -> nullptr
+    root->clearChildren();              // child->mParent reset
+    CHECK(root->childCount() == 0);
+
+    // inputTransparent segment: hitTest short-circuits + handleGesture returns false
+    auto transparent = std::make_shared<Segment>();
+    transparent->width.set(50); transparent->height.set(50);
+    transparent->inputTransparent = true;
+    CHECK(!transparent->hitTest({5, 5}));
+    transparent->onGesture({Gesture::Type::Down, {5, 5}, {5, 5}, PointerButton::Left});
+
+    // requestFocus on a non-focusable segment is a no-op
+    auto plain = std::make_shared<Segment>();
+    plain->requestFocus();
+    CHECK(!plain->hasFocus());
+
+    // focused-but-disabled segment: handleKey returns false
+    auto k = std::make_shared<Segment>();
+    k->focusable = true;
+    k->requestFocus();
+    CHECK(k->hasFocus());
+    k->enabled = false;
+    CHECK(!k->dispatchKey({KeyEvent::Type::Down, 65}));
+
+    // hidden segment: dispatchGesture early-outs
+    auto hidden = std::make_shared<Segment>();
+    hidden->visible = false;
+    hidden->onGesture({Gesture::Type::Down, {1, 1}, {1, 1}, PointerButton::Left});
+
+    // a stack-allocated Segment exercises the destructor directly
+    { Segment local; local.width.set(1.0); }
+}
+
+// ───────────────── baseline controls (render + interaction) ─────────────────
+TEST(Button_full)
+{
+    auto btn = std::make_shared<Button>("OK");
+    int clicks = 0;
+    btn->onClick = [&] { ++clicks; };
+    RecordingTarget r; btn->render(r);            // ensureVisualTree + body + label onPaint
+    CHECK(r.count(K::DrawText) == 1);
+    btn->onGesture({Gesture::Type::Down, {5, 5}, {5, 5}, PointerButton::Left});
+    btn->onGesture({Gesture::Type::Up, {5, 5}, {5, 5}, PointerButton::Left});
+    btn->onGesture({Gesture::Type::Click, {5, 5}, {5, 5}, PointerButton::Left});
+    CHECK(clicks == 1);
+    btn->onGesture({Gesture::Type::Drop, {5, 5}, {5, 5}, PointerButton::Left});  // reset pressed
+    btn->onGesture({Gesture::Type::Move, {5, 5}, {5, 5}, PointerButton::Left});  // default fallback
+    btn->requestFocus();
+    btn->dispatchKey({KeyEvent::Type::Down, 13});  // Enter -> onClick
+    CHECK(clicks == 2);
+    CHECK(!btn->dispatchKey({KeyEvent::Type::Down, 65})); // non-confirm
+    btn->setStyle(Theme::basicTheme().button);
+}
+TEST(Slider_full)
+{
+    auto sl = std::make_shared<Slider>();
+    RecordingTarget r; sl->render(r);
+    CHECK(r.count(K::FillPath) >= 2);
+    sl->onGesture({Gesture::Type::Down, {40, 14}, {40, 14}, PointerButton::Left});  // value from x
+    CHECK(sl->value() > 0.0);
+    sl->onGesture({Gesture::Type::Drag, {80, 14}, {80, 14}, PointerButton::Left});
+    sl->onGesture({Gesture::Type::Click, {160, 14}, {160, 14}, PointerButton::Left});
+    sl->onGesture({Gesture::Type::Click, {-10, 14}, {-10, 14}, PointerButton::Left}); // clamp low
+    sl->onGesture({Gesture::Type::Click, {200, 14}, {200, 14}, PointerButton::Left});  // clamp high
+    sl->onGesture({Gesture::Type::Move, {10, 10}, {10, 10}, PointerButton::Left}); // default fallback
+    sl->requestFocus();
+    sl->setAnalog(true);
+    sl->dispatchKey({KeyEvent::Type::Down, 39}); // right
+    sl->dispatchKey({KeyEvent::Type::Down, 37}); // left
+    sl->setAnalog(false);
+    sl->dispatchKey({KeyEvent::Type::Down, 39}); // step=1 branch
+    CHECK(!sl->dispatchKey({KeyEvent::Type::Up, 39})); // type != Down -> false
+    sl->dispatchKey({KeyEvent::Type::Down, 65});       // non-arrow -> Segment::handleKey
+    sl->setRange(5.0, 5.0);    // span 0 -> normalizedValue() 0 branch on next render
+    sl->render(r);
+    sl->setStyle(Theme::basicTheme().slider);
+    // width 0 -> valueForLocalX returns minimum()
+    auto sl0 = std::make_shared<Slider>();
+    sl0->width.set(0.0);
+    sl0->onGesture({Gesture::Type::Down, {5, 5}, {5, 5}, PointerButton::Left});
+    CHECK_NEAR(sl0->value(), sl0->minimum(), 1e-9);
+}
+TEST(AbstractSlider_clamp_reversed_range)
+{
+    AbstractSlider s(0.0, 5.0, 1.0); // max < min -> clamp returns mMin
+    CHECK_NEAR(s.value(), 5.0, 1e-9);
+}
+TEST(Checkbox_full)
+{
+    auto cb = std::make_shared<Checkbox>("Bypass");
+    RecordingTarget r; cb->render(r);
+    cb->onGesture({Gesture::Type::Click, {5, 5}, {5, 5}, PointerButton::Left});
+    CHECK(cb->checked());
+    cb->render(r); // indicator visible branch
+    cb->requestFocus();
+    cb->dispatchKey({KeyEvent::Type::Down, 32}); // space toggles off
+    CHECK(!cb->checked());
+    CHECK(!cb->dispatchKey({KeyEvent::Type::Down, 65})); // non-confirm
+    cb->onGesture({Gesture::Type::Move, {5, 5}, {5, 5}, PointerButton::Left}); // default fallback
+    cb->setChecked(true);
+    cb->setStyle(Theme::basicTheme().checkbox);
+}
+TEST(TextBox_full)
+{
+    auto tb = std::make_shared<TextBox>();
+    tb->placeholder = "type";
+    RecordingTarget r; tb->render(r); // placeholder + idle (unfocused)
+    tb->onGesture({Gesture::Type::Down, {5, 5}, {5, 5}, PointerButton::Left});
+    CHECK(tb->hasFocus());
+    tb->render(r); // focused box + caret visible
+    tb->dispatchKey({KeyEvent::Type::Text, 0, "a"});
+    CHECK(tb->text == "a");
+    tb->render(r); // text (non-placeholder) branch
+    tb->dispatchKey({KeyEvent::Type::Down, 8});  // backspace removes 'a'
+    CHECK(tb->text.empty());
+    tb->dispatchKey({KeyEvent::Type::Down, 8});  // backspace on empty -> fallthrough
+    tb->dispatchKey({KeyEvent::Type::Down, 65}); // other key -> fallthrough
+    tb->onGesture({Gesture::Type::Move, {5, 5}, {5, 5}, PointerButton::Left}); // default fallback
+    tb->readOnly = true;
+    CHECK(!tb->dispatchKey({KeyEvent::Type::Text, 0, "x"})); // read-only -> false
+    tb->setStyle(Theme::basicTheme().textBox);
 }
 
 int main() { return mini::runAll(); }

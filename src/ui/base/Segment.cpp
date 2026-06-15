@@ -28,8 +28,22 @@ namespace artboard
         onPaint(t);
         t.restore();
 
-        for (const auto &child : mChildren)
-            child->render(t, world);
+        if (clipToBounds)
+        {
+            // Clip the whole child subtree to this segment's local bounds.
+            t.save();
+            t.setTransform(world);
+            const Rect b = localBounds();
+            t.clipRect(b.x, b.y, b.w, b.h);
+            for (const auto &child : mChildren)
+                child->render(t, world);
+            t.restore();
+        }
+        else
+        {
+            for (const auto &child : mChildren)
+                child->render(t, world);
+        }
     }
 
     bool Segment::hitTest(const Point &p) const

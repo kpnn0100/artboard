@@ -63,13 +63,25 @@ forcing all controls into one monolithic manager class.
 
 ### 3.2 `anim`
 
-- `Animation` defines a pure time-based scalar tween.
-- `AnimatedProperty` stores runtime animation state.
+- `Easing` is a library of pure easing curves (`applyEasing(curve, t)`); curves never touch a backend.
+- `Animation` defines a pure single-shot time-based scalar tween (kept for back-compat).
+- `Tween` is a richer pure spec: `from/to/durationMs/delayMs/easing/repeat/yoyo`, sampled by elapsed
+  time (`at(elapsedMs)`), used by both `AnimatedProperty` and `Animator`.
+- `AnimatedProperty` stores runtime animation state and drives a single scalar from a `Tween`
+  (delay/repeat/yoyo + an `onComplete` callback).
+- `Animator` is a callback-based timeline: it owns many tracks, each animating an arbitrary value
+  through an `onUpdate(value)` callback; one `advance(nowMs)` per frame ticks them all and drops
+  finished tracks. It is the ergonomic "animate anything" entry point and depends only on
+  `std::function` — no backend, no `Segment` coupling.
 - `ui::Property` wraps `AnimatedProperty` for segment-level use.
 
 ### 3.3 `render`
 
-- `IRenderTarget` is the only output seam.
+- `IRenderTarget` is the only output seam. Besides state/paint/path/text it exposes one
+  region primitive, `clipRect(x,y,w,h)`, intersected with the current clip and scoped by
+  `save()`/`restore()`. Clipping is a primitive because no combination of fill/stroke/path ops
+  can restrict subsequent drawing to a region; every adapter implements it natively
+  (Canvas2D `clip()`, Cairo `cairo_clip()`), and `RecordingTarget` records it.
 - `RecordingTarget` records draw operations for tests and inspection.
 
 ### 3.4 `input`
@@ -86,11 +98,24 @@ forcing all controls into one monolithic manager class.
 
 ### 3.6 `ui`
 
-- `Segment` is the composite interactive base class.
-- `InputController` is an abstract input strategy for reusable behavior injection.
-- `Theme` contains baseline concrete visual styles.
-- `RectangleSegment`, `CircleSegment`, and `LabelSegment` are reusable visual nodes.
-- `Button`, `Slider`, `Checkbox`, and `TextBox` are concrete controls.
+The `ui` module is split by role into two folders, **one class per file** for maintainability:
+
+- **`ui/base/`** — framework foundations and reusable building blocks:
+  - `Segment` (composite interactive base; `clipToBounds` clips children via the HAL `clipRect`),
+  - `InputController` (abstract input strategy; also declares `KeyEvent` and the `isConfirmKey`
+    helper),
+  - `Property` (animated scalar wrapper),
+  - `Theme` (all concrete visual style structs + the baseline theme),
+  - `AbstractSlider` (ranged value/behavior with no visual concerns),
+  - `RectangleSegment`, `CircleSegment`, `LabelSegment` (reusable visual nodes).
+- **`ui/concrete/`** — the finished, themed controls, each its own file:
+  - baseline: `Button`, `Slider`, `Checkbox`, `TextBox`,
+  - extended: `Knob`, `ToggleSwitch`, `ProgressBar`, `ComboBox`, `TabView`, `ScrollView`,
+    `LineGraph`.
+
+Concrete controls reuse `Segment` composition, the shared `drawRoundedRect`/`drawCircle` helpers
+(in `scene`), and `AbstractSlider` where a ranged value applies (`Slider`, `Knob`). The aggregate
+header `include/artboard/artboard.h` pulls in every base + concrete header.
 
 ## 4. Control Architecture
 
@@ -114,6 +139,48 @@ forcing all controls into one monolithic manager class.
 - Behavior: focus acquisition, text insertion, backspace.
 - Visual composition: background rectangle + text label + caret rectangle.
 
+### 4.5 Knob
+
+- Behavior: `AbstractSlider` value/range; vertical drag (drag distance / sensitivity) and keyboard
+  step; `onChange(value)`.
+- Visual composition: drawn directly in `onPaint` — dial circle, sampled arc track, value arc, and
+  indicator line over a 270° sweep.
+
+### 4.6 ToggleSwitch
+
+- Behavior: boolean; click or keyboard confirm toggles; `onChange(bool)`; thumb position is an
+  `AnimatedProperty` for a smooth slide.
+- Visual composition: rounded track + moving thumb circle, drawn in `onPaint`.
+
+### 4.7 ProgressBar
+
+- Behavior: non-interactive; `setValue([0,1])`.
+- Visual composition: track + clamped fill, drawn in `onPaint`.
+
+### 4.8 ComboBox
+
+- Behavior: open/closed state; click toggles; option rows are child `Segment`s created when open;
+  selecting a row sets the index, closes, and fires `onChange(index)`.
+- Visual composition: field box + caret glyph + label; popup rows below the field.
+
+### 4.9 TabView
+
+- Behavior: a selected index; each tab header is a child hit region; selecting shows one page
+  segment and hides the others; `onChange(index)`.
+- Visual composition: tab-strip headers + the active page subtree.
+
+### 4.10 ScrollView
+
+- Behavior: holds one taller content segment; vertical drag and a draggable thumb adjust a scroll
+  offset clamped to `[0, contentHeight - viewportHeight]`; `clipToBounds` clips the content.
+- Visual composition: clipped viewport (content translated by `-offset`) + scrollbar track/thumb.
+
+### 4.11 LineGraph
+
+- Behavior: non-interactive; `setSeries(values)` + value range; data visualisation.
+- Visual composition: background, grid lines, an optional filled area, and the series polyline,
+  drawn in `onPaint`.
+
 ## 5. SOLID Mapping
 
 - SRP: render HAL, input HAL, scene graphics, UI composition, and control state are distinct units.
@@ -125,6 +192,7 @@ forcing all controls into one monolithic manager class.
 
 ## 6. Known Architectural Gaps
 
-- No render HAL clipping primitive yet, so `clipToBounds` is declarative only.
-- No text measurement service yet, so text box caret placement is approximate.
-- No layout containers yet, so sizing and placement remain explicit at the segment level.
+- No text measurement service yet, so text box / combo / graph text placement is approximate.
+- No constraint/flow layout containers yet, so sizing and placement remain explicit at the
+  segment level (widgets size themselves but are positioned by the app).
+- Clipping is rectangular only (no arbitrary path clip / soft masks yet).

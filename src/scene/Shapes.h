@@ -28,6 +28,14 @@ namespace artboard
     /** Fill then stroke the current path according to `paint`. */
     void applyPaint(IRenderTarget &t, const Paint &paint);
 
+    /** Build a (optionally rounded) rectangle path and paint it. Radius is clamped
+     *  to half the smaller side. Shared by Rectangle and the UI controls/widgets. */
+    void drawRoundedRect(IRenderTarget &t, const Rect &rect, double cornerRadius, const Paint &paint);
+
+    /** Build a circle path (four cubic beziers) at (cx,cy) of radius r and paint it.
+     *  Shared by the rotary/round UI widgets. */
+    void drawCircle(IRenderTarget &t, double cx, double cy, double r, const Paint &paint);
+
     /** Rectangle / square, optional corner radius and border (via Paint). */
     class Rectangle : public Drawable
     {

@@ -13,6 +13,12 @@ namespace artboard
         op.transform = t;
         mOps.push_back(op);
     }
+    void RecordingTarget::clipRect(double x, double y, double w, double h)
+    {
+        DrawOp op{K::ClipRect};
+        op.args[0] = x; op.args[1] = y; op.args[2] = w; op.args[3] = h;
+        mOps.push_back(op);
+    }
     void RecordingTarget::setFill(const Color &c)
     {
         DrawOp op{K::SetFill};

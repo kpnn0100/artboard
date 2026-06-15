@@ -16,6 +16,7 @@ namespace artboard
         void save() override;
         void restore() override;
         void setTransform(const Transform &t) override;
+        void clipRect(double x, double y, double w, double h) override;
         void setFill(const Color &c) override;
         void setStroke(const Color &c, double width) override;
         void beginPath() override;

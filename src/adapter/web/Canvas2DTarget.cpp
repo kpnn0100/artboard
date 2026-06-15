@@ -7,6 +7,8 @@ EM_JS(void, ab_save, (), { window.__abctx.save(); });
 EM_JS(void, ab_restore, (), { window.__abctx.restore(); });
 EM_JS(void, ab_xform, (double a, double b, double c, double d, double e, double f),
       { window.__abctx.setTransform(a, b, c, d, e, f); });
+EM_JS(void, ab_clip, (double x, double y, double w, double h),
+      { var c = window.__abctx; c.beginPath(); c.rect(x, y, w, h); c.clip(); });
 EM_JS(void, ab_fillStyle, (double r, double g, double b, double a),
       { window.__abctx.fillStyle = 'rgba(' + (r * 255 | 0) + ',' + (g * 255 | 0) + ',' + (b * 255 | 0) + ',' + a + ')'; });
 EM_JS(void, ab_strokeStyle, (double r, double g, double b, double a, double w),
@@ -27,6 +29,7 @@ namespace artboard
     void Canvas2DTarget::save() { ab_save(); }
     void Canvas2DTarget::restore() { ab_restore(); }
     void Canvas2DTarget::setTransform(const Transform &t) { ab_xform(t.a, t.b, t.c, t.d, t.e, t.f); }
+    void Canvas2DTarget::clipRect(double x, double y, double w, double h) { ab_clip(x, y, w, h); }
     void Canvas2DTarget::setFill(const Color &c) { ab_fillStyle(c.r, c.g, c.b, c.a); }
     void Canvas2DTarget::setStroke(const Color &c, double width) { ab_strokeStyle(c.r, c.g, c.b, c.a, width); }
     void Canvas2DTarget::beginPath() { ab_begin(); }

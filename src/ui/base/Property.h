@@ -1,5 +1,5 @@
 #pragma once
-#include "../anim/Animation.h"
+#include "../../anim/Animation.h"
 
 namespace artboard
 {
@@ -13,6 +13,10 @@ namespace artboard
         void animateTo(double target, double durationMs, Easing easing, double nowMs)
         {
             mAnimated.animateTo(target, durationMs, easing, nowMs);
+        }
+        void animate(const Tween &spec, double nowMs, std::function<void()> onComplete = {})
+        {
+            mAnimated.animate(spec, nowMs, std::move(onComplete));
         }
         double update(double nowMs) { return mAnimated.update(nowMs); }
         double value() const { return mAnimated.value(); }

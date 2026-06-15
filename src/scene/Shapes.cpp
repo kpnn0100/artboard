@@ -16,7 +16,7 @@ namespace artboard
         }
     }
 
-    void Rectangle::onDraw(IRenderTarget &t) const
+    void drawRoundedRect(IRenderTarget &t, const Rect &rect, double cornerRadius, const Paint &paint)
     {
         const double x = rect.x, y = rect.y, w = rect.w, h = rect.h;
         t.beginPath();
@@ -42,6 +42,25 @@ namespace artboard
             t.closePath();
         }
         applyPaint(t, paint);
+    }
+
+    void drawCircle(IRenderTarget &t, double cx, double cy, double r, const Paint &paint)
+    {
+        const double k = 0.5522847498307936;
+        const double ox = r * k, oy = r * k;
+        t.beginPath();
+        t.moveTo(cx - r, cy);
+        t.cubicTo(cx - r, cy - oy, cx - ox, cy - r, cx, cy - r);
+        t.cubicTo(cx + ox, cy - r, cx + r, cy - oy, cx + r, cy);
+        t.cubicTo(cx + r, cy + oy, cx + ox, cy + r, cx, cy + r);
+        t.cubicTo(cx - ox, cy + r, cx - r, cy + oy, cx - r, cy);
+        t.closePath();
+        applyPaint(t, paint);
+    }
+
+    void Rectangle::onDraw(IRenderTarget &t) const
+    {
+        drawRoundedRect(t, rect, cornerRadius, paint);
     }
 
     void Line::onDraw(IRenderTarget &t) const

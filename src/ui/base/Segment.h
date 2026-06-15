@@ -1,8 +1,8 @@
 #pragma once
 #include "InputController.h"
 #include "Property.h"
-#include "../input/InputRouter.h"
-#include "../scene/Drawable.h"
+#include "../../input/InputRouter.h"
+#include "../../scene/Drawable.h"
 #include <memory>
 #include <vector>
 
@@ -41,7 +41,7 @@ namespace artboard
         Transform worldTransform() const;
         Point toLocal(const Point &worldPoint) const;
 
-        void advance(double nowMs);
+        virtual void advance(double nowMs);
         void requestFocus();
         bool hasFocus() const { return mFocused; }
         static Segment *focusedInGroup(int focusIndex);

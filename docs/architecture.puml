@@ -14,9 +14,13 @@ package core {
 package anim {
   enum Easing
   class Animation
+  class Tween
   class AnimatedProperty
+  class Animator
   Animation ..> Easing
-  AnimatedProperty *--> Animation
+  Tween ..> Easing
+  AnimatedProperty *--> Tween
+  Animator *--> Tween
 }
 
 package render {
@@ -70,6 +74,13 @@ package ui {
   class Button
   class Checkbox
   class TextBox
+  class Knob
+  class ToggleSwitch
+  class ProgressBar
+  class ComboBox
+  class TabView
+  class ScrollView
+  class LineGraph
 
   Segment --|> Drawable
   Segment ..|> InputTarget
@@ -84,10 +95,25 @@ package ui {
   Button --|> Segment
   Checkbox --|> Segment
   TextBox --|> Segment
+  Knob --|> Segment
+  Knob --|> AbstractSlider
+  ToggleSwitch --|> Segment
+  ProgressBar --|> Segment
+  ComboBox --|> Segment
+  TabView --|> Segment
+  ScrollView --|> Segment
+  LineGraph --|> Segment
   Theme ..> Slider
   Theme ..> Button
   Theme ..> Checkbox
   Theme ..> TextBox
+  Theme ..> Knob
+  Theme ..> ToggleSwitch
+  Theme ..> ProgressBar
+  Theme ..> ComboBox
+  Theme ..> TabView
+  Theme ..> ScrollView
+  Theme ..> LineGraph
 }
 
 package "adapter/web" {

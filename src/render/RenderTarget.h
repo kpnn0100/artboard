@@ -21,6 +21,12 @@ namespace artboard
         virtual void restore() = 0;
         virtual void setTransform(const Transform &t) = 0;
 
+        // ---- clip ----
+        // Intersect the current clip region with the rectangle (in the current
+        // transform space). Scoped by save()/restore(). A clip is a primitive
+        // because no fill/stroke/path combination can restrict later drawing.
+        virtual void clipRect(double x, double y, double w, double h) = 0;
+
         // ---- paint ----
         virtual void setFill(const Color &c) = 0;
         virtual void setStroke(const Color &c, double width) = 0;
