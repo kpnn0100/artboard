@@ -29,6 +29,10 @@ namespace artboard
 
         // ---- paint ----
         virtual void setFill(const Color &c) = 0;
+        // Two-stop radial gradient fill (inner at centre -> outer at radius, current
+        // transform space). The next fillPath() uses it. A smooth gradient is a primitive
+        // because solid fills can only approximate it by stacking translucent shapes.
+        virtual void setRadialFill(double cx, double cy, double radius, const Color &inner, const Color &outer) = 0;
         virtual void setStroke(const Color &c, double width) = 0;
 
         // ---- path building ----

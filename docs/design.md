@@ -24,4 +24,5 @@ Artboard now has two complementary authoring models:
   keyboard/pointer behavior.
 
 The two models share the same geometry, animation, render HAL (now including a `clipRect`
-primitive), and input HAL.
+primitive and a `setRadialFill` two-stop radial-gradient paint for true soft glows), and input
+HAL.

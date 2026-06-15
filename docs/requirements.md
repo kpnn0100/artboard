@@ -133,6 +133,18 @@ through the input + render HALs:
 - `LineGraph` — a non-interactive plot of a numeric series over a `[min,max]` value range, drawn
   as grid + polyline (+ optional filled area) for data visualisation.
 
+### FR-13 Radial-gradient fill primitive
+
+The render HAL shall provide a two-stop radial-gradient fill,
+`setRadialFill(cx, cy, radius, innerColor, outerColor)`, which sets the current fill so that a
+subsequent `fillPath()` paints a smooth radial gradient: `innerColor` at the centre `(cx, cy)`
+fading to `outerColor` at `radius` (coordinates in the current transform space). It replaces any
+solid `setFill` until the next `setFill`/`setRadialFill`. This is a HAL extension because a smooth
+opacity/colour gradient **cannot** be expressed by solid fills (stacking translucent shapes only
+approximates it with visible banding). It enables true soft glows that fade continuously to zero
+opacity (`outerColor` alpha = 0). Adapters back it with their native gradient (Canvas2D
+`createRadialGradient`, Cairo radial pattern); the `RecordingTarget` records it for tests.
+
 ## 4. Non-functional Requirements
 
 ### NFR-1 Platform independence

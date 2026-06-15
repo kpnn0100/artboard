@@ -11,6 +11,11 @@ EM_JS(void, ab_clip, (double x, double y, double w, double h),
       { var c = window.__abctx; c.beginPath(); c.rect(x, y, w, h); c.clip(); });
 EM_JS(void, ab_fillStyle, (double r, double g, double b, double a),
       { window.__abctx.fillStyle = 'rgba(' + (r * 255 | 0) + ',' + (g * 255 | 0) + ',' + (b * 255 | 0) + ',' + a + ')'; });
+EM_JS(void, ab_radialFill, (double cx, double cy, double rad, double ir, double ig, double ib, double ia, double orr, double og, double ob, double oa),
+      { var c = window.__abctx; var g = c.createRadialGradient(cx, cy, 0, cx, cy, rad > 0.01 ? rad : 0.01);
+        g.addColorStop(0, 'rgba(' + (ir * 255 | 0) + ',' + (ig * 255 | 0) + ',' + (ib * 255 | 0) + ',' + ia + ')');
+        g.addColorStop(1, 'rgba(' + (orr * 255 | 0) + ',' + (og * 255 | 0) + ',' + (ob * 255 | 0) + ',' + oa + ')');
+        c.fillStyle = g; });
 EM_JS(void, ab_strokeStyle, (double r, double g, double b, double a, double w),
       { var c = window.__abctx; c.strokeStyle = 'rgba(' + (r * 255 | 0) + ',' + (g * 255 | 0) + ',' + (b * 255 | 0) + ',' + a + ')'; c.lineWidth = w; });
 EM_JS(void, ab_begin, (), { window.__abctx.beginPath(); });
@@ -31,6 +36,10 @@ namespace artboard
     void Canvas2DTarget::setTransform(const Transform &t) { ab_xform(t.a, t.b, t.c, t.d, t.e, t.f); }
     void Canvas2DTarget::clipRect(double x, double y, double w, double h) { ab_clip(x, y, w, h); }
     void Canvas2DTarget::setFill(const Color &c) { ab_fillStyle(c.r, c.g, c.b, c.a); }
+    void Canvas2DTarget::setRadialFill(double cx, double cy, double radius, const Color &inner, const Color &outer)
+    {
+        ab_radialFill(cx, cy, radius, inner.r, inner.g, inner.b, inner.a, outer.r, outer.g, outer.b, outer.a);
+    }
     void Canvas2DTarget::setStroke(const Color &c, double width) { ab_strokeStyle(c.r, c.g, c.b, c.a, width); }
     void Canvas2DTarget::beginPath() { ab_begin(); }
     void Canvas2DTarget::moveTo(double x, double y) { ab_moveTo(x, y); }

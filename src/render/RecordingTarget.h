@@ -13,13 +13,14 @@ namespace artboard
     {
         enum class Kind
         {
-            Save, Restore, SetTransform, ClipRect, SetFill, SetStroke,
+            Save, Restore, SetTransform, ClipRect, SetFill, SetRadialFill, SetStroke,
             BeginPath, MoveTo, LineTo, QuadTo, CubicTo, ClosePath,
             FillPath, StrokePath, DrawText
         };
         Kind kind;
         double args[6] = {0, 0, 0, 0, 0, 0};
-        Color color;
+        Color color;       // SetFill / SetStroke colour, or radial inner colour
+        Color color2;      // radial outer colour
         double width = 0;
         Transform transform;
         std::string text;
@@ -33,6 +34,7 @@ namespace artboard
         void setTransform(const Transform &t) override;
         void clipRect(double x, double y, double w, double h) override;
         void setFill(const Color &c) override;
+        void setRadialFill(double cx, double cy, double radius, const Color &inner, const Color &outer) override;
         void setStroke(const Color &c, double width) override;
         void beginPath() override;
         void moveTo(double x, double y) override;

@@ -82,6 +82,11 @@ forcing all controls into one monolithic manager class.
   `save()`/`restore()`. Clipping is a primitive because no combination of fill/stroke/path ops
   can restrict subsequent drawing to a region; every adapter implements it natively
   (Canvas2D `clip()`, Cairo `cairo_clip()`), and `RecordingTarget` records it.
+- It also exposes one paint-server primitive, `setRadialFill(cx,cy,r,inner,outer)` — a two-stop
+  radial gradient that the next `fillPath()` uses. A smooth colour/opacity gradient is a primitive
+  because solid fills can only approximate it by stacking translucent shapes (which bands); every
+  adapter maps it to a native gradient (Canvas2D `createRadialGradient`, Cairo radial pattern), so
+  glows fade continuously to zero opacity. `RecordingTarget` records it.
 - `RecordingTarget` records draw operations for tests and inspection.
 
 ### 3.4 `input`

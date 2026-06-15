@@ -16,6 +16,7 @@ namespace artboard
         void setTransform(const Transform &t) override;
         void clipRect(double x, double y, double w, double h) override;
         void setFill(const Color &c) override;
+        void setRadialFill(double cx, double cy, double radius, const Color &inner, const Color &outer) override;
         void setStroke(const Color &c, double width) override;
         void beginPath() override;
         void moveTo(double x, double y) override;

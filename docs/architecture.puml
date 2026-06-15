@@ -24,7 +24,10 @@ package anim {
 }
 
 package render {
-  interface IRenderTarget
+  interface IRenderTarget {
+    +clipRect(x,y,w,h)
+    +setRadialFill(cx,cy,r,inner,outer)
+  }
   class RecordingTarget
   RecordingTarget ..|> IRenderTarget
 }

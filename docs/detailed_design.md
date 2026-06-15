@@ -233,6 +233,23 @@ types without creating a deep inheritance chain.
 - `Canvas2DTarget` maps it to `ctx.beginPath(); ctx.rect(...); ctx.clip()`.
 - `CairoTarget` maps it to `cairo_rectangle(...); cairo_clip()`.
 
+## 11b. Radial-gradient fill
+
+### HAL
+
+- `IRenderTarget::setRadialFill(cx, cy, radius, inner, outer)` sets the current fill to a two-stop
+  radial gradient (centre `inner` → edge `outer` at `radius`, current transform space). The next
+  `fillPath()` paints with it; it is superseded by the next `setFill`/`setRadialFill`.
+- `RecordingTarget` records `DrawOp::Kind::SetRadialFill` with `args[0..2] = cx,cy,radius`,
+  `color = inner`, and a new `color2 = outer`.
+- `Canvas2DTarget`: `g = ctx.createRadialGradient(cx,cy,0, cx,cy,radius)` + two colour stops →
+  `ctx.fillStyle = g`.
+- `CairoTarget`: `cairo_pattern_create_radial(cx,cy,0, cx,cy,radius)` + two stops →
+  `cairo_set_source`.
+- Rationale: a smooth gradient to zero opacity (a soft glow) cannot be expressed by solid fills;
+  stacking translucent shapes only approximates it and bands. This is the minimal paint-server
+  primitive (two stops, radial) needed for glows; richer gradients can extend it later (OCP).
+
 ### Segment wiring
 
 - `Segment::render` is unchanged for non-clipping segments (same op stream). When
@@ -305,5 +322,7 @@ inline helper in `base/InputController.h`.
 - FR-9 maps to the split between `AbstractSlider` and `Slider`.
 - FR-11 maps to `IRenderTarget::clipRect`, `RecordingTarget`, the two adapters, and
   `Segment::clipToBounds`.
+- FR-13 maps to `IRenderTarget::setRadialFill`, `RecordingTarget` (+ `DrawOp::color2`), and the
+  Canvas2D / Cairo adapters.
 - FR-12 maps to `Knob`, `ToggleSwitch`, `ProgressBar`, `ComboBox`, `TabView`, `ScrollView`, and
   `LineGraph`, one class per file under `ui/concrete/`.

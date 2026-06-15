@@ -760,6 +760,20 @@ TEST(RecordingTarget_clipRect_records)
     CHECK_NEAR(rec.ops()[0].args[0], 1.0, 1e-9);
     CHECK_NEAR(rec.ops()[0].args[3], 40.0, 1e-9);
 }
+TEST(RecordingTarget_setRadialFill_records)
+{
+    RecordingTarget rec;
+    Color inner = Color::rgba(255, 0, 0, 255);
+    Color outer = Color::rgba(255, 0, 0, 0); // fade to zero opacity
+    rec.setRadialFill(10, 20, 8, inner, outer);
+    CHECK(rec.count(K::SetRadialFill) == 1);
+    const auto &op = rec.ops()[0];
+    CHECK_NEAR(op.args[0], 10.0, 1e-9);
+    CHECK_NEAR(op.args[1], 20.0, 1e-9);
+    CHECK_NEAR(op.args[2], 8.0, 1e-9);
+    CHECK(op.color == inner);
+    CHECK(op.color2 == outer);
+}
 TEST(Segment_clipToBounds_emits_clip_around_children)
 {
     auto root = std::make_shared<Segment>();

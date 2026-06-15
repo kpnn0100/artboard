@@ -25,6 +25,14 @@ namespace artboard
         op.color = c;
         mOps.push_back(op);
     }
+    void RecordingTarget::setRadialFill(double cx, double cy, double radius, const Color &inner, const Color &outer)
+    {
+        DrawOp op{K::SetRadialFill};
+        op.args[0] = cx; op.args[1] = cy; op.args[2] = radius;
+        op.color = inner;
+        op.color2 = outer;
+        mOps.push_back(op);
+    }
     void RecordingTarget::setStroke(const Color &c, double width)
     {
         DrawOp op{K::SetStroke};

@@ -31,6 +31,15 @@ namespace artboard
         cairo_set_source_rgba(mContext, c.r, c.g, c.b, c.a);
     }
 
+    void CairoTarget::setRadialFill(double cx, double cy, double radius, const Color &inner, const Color &outer)
+    {
+        cairo_pattern_t *p = cairo_pattern_create_radial(cx, cy, 0.0, cx, cy, radius > 0.01 ? radius : 0.01);
+        cairo_pattern_add_color_stop_rgba(p, 0.0, inner.r, inner.g, inner.b, inner.a);
+        cairo_pattern_add_color_stop_rgba(p, 1.0, outer.r, outer.g, outer.b, outer.a);
+        cairo_set_source(mContext, p);
+        cairo_pattern_destroy(p);
+    }
+
     void CairoTarget::setStroke(const Color &c, double width)
     {
         cairo_set_source_rgba(mContext, c.r, c.g, c.b, c.a);
