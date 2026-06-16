@@ -73,6 +73,9 @@ package ui {
   class RectangleSegment
   class CircleSegment
   class LabelSegment
+  class LinearLayout
+  class Row
+  class Column
   class AbstractSlider
   class Slider
   class Button
@@ -95,6 +98,9 @@ package ui {
   RectangleSegment --|> Segment
   CircleSegment --|> Segment
   LabelSegment --|> Segment
+  LinearLayout --|> Segment
+  Row --|> LinearLayout
+  Column --|> LinearLayout
   Slider --|> Segment
   Slider --|> AbstractSlider
   Button --|> Segment

@@ -156,6 +156,16 @@ Consequently, when the target moves the snapped segment follows (e.g. the left o
 the right of A keeps B glued to A as A moves). `clearSnap()` removes the constraint; a null or
 self target is ignored. Snap is platform-free geometry (no HAL change).
 
+### FR-15 Linear layout containers
+
+The framework shall provide `Row` and `Column` layout segments that position their **visible**
+children along one axis — `Row` left→right (advancing `x`), `Column` top→bottom (advancing `y`) —
+separated by a `spacing` gap and inset by `padding`, with the cross-axis offset set to `padding`.
+Layout is resolved each `advance(nowMs)`. The container **auto-sizes** to its content (main axis =
+sum of child extents + gaps + padding; cross axis = largest child + padding). With no visible
+children the container collapses to `2·padding` on each axis. This is platform-free geometry (no
+HAL change) and lets a `Column` of `Row`s express grouped control layouts.
+
 ## 4. Non-functional Requirements
 
 ### NFR-1 Platform independence

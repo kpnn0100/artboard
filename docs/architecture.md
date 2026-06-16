@@ -109,6 +109,8 @@ The `ui` module is split by role into two folders, **one class per file** for ma
   - `Segment` (composite interactive base; `clipToBounds` clips children via the HAL `clipRect`;
     `snapTo()` constrains one edge to another segment's edge + offset, resolved each `advance()`
     so a segment follows the one it is snapped to),
+  - `LinearLayout` (base) + `Row` / `Column` — position visible children along one axis with
+    spacing/padding and auto-size to content (resolved each `advance()`),
   - `InputController` (abstract input strategy; also declares `KeyEvent` and the `isConfirmKey`
     helper),
   - `Property` (animated scalar wrapper),

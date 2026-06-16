@@ -1213,4 +1213,49 @@ TEST(Segment_snap_edges_and_follow)
     b->advance(0); // resolveSnap early-out with no target
 }
 
+// ───────────────────────── Row / Column layout ─────────────────────────
+TEST(Row_and_Column_layout)
+{
+    auto mk = [](double w, double h) {
+        auto s = std::make_shared<Segment>();
+        s->width.set(w); s->height.set(h);
+        return s;
+    };
+
+    // Row: left -> right with spacing, inset by padding; auto-sizes to content.
+    auto row = std::make_shared<Row>();
+    row->spacing = 10.0; row->padding = 5.0;
+    auto a = mk(30, 20), b = mk(50, 40);
+    row->addChild(a); row->addChild(b);
+    row->advance(0);
+    CHECK_NEAR(a->x.value(), 5.0, 1e-9);   // padding
+    CHECK_NEAR(a->y.value(), 5.0, 1e-9);
+    CHECK_NEAR(b->x.value(), 45.0, 1e-9);  // 5 + 30 + 10
+    CHECK_NEAR(row->width.value(), 100.0, 1e-9);  // 5 +30+10+50 +5
+    CHECK_NEAR(row->height.value(), 50.0, 1e-9);  // max(20,40) + 2*5
+
+    // invisible children are skipped
+    b->visible = false;
+    row->advance(0);
+    CHECK_NEAR(row->width.value(), 40.0, 1e-9); // 5 + 30 + 5
+
+    // Column: top -> bottom
+    auto col = std::make_shared<Column>();
+    col->spacing = 4.0; col->padding = 2.0;
+    auto c = mk(60, 12), d = mk(20, 18);
+    col->addChild(c); col->addChild(d);
+    col->advance(0);
+    CHECK_NEAR(c->y.value(), 2.0, 1e-9);
+    CHECK_NEAR(d->y.value(), 18.0, 1e-9);  // 2 + 12 + 4
+    CHECK_NEAR(col->height.value(), 38.0, 1e-9); // 2 +12+4+18 +2
+    CHECK_NEAR(col->width.value(), 64.0, 1e-9);  // max(60,20) + 2*2
+
+    // empty container collapses to 2*padding on both axes
+    auto empty = std::make_shared<Row>();
+    empty->padding = 3.0;
+    empty->advance(0);
+    CHECK_NEAR(empty->width.value(), 6.0, 1e-9);
+    CHECK_NEAR(empty->height.value(), 6.0, 1e-9);
+}
+
 int main() { return mini::runAll(); }

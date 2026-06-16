@@ -115,6 +115,20 @@ A callback-based timeline that lets an application animate **any** value without
   target is held as a raw pointer (same ownership model as the parent pointer; caller keeps it
   alive). Snapping is pure geometry — no HAL involvement.
 
+## 2f. `LinearLayout` / `Row` / `Column`
+
+Linear layout containers (`ui/base/LinearLayout`, `ui/concrete/Row`, `ui/concrete/Column`).
+
+- `LinearLayout : Segment` holds `spacing` and `padding` and an axis flag; `Row(true)` /
+  `Column(false)` are thin subclasses.
+- `layout()` walks the **visible** children: along the main axis it sets each child's `x`
+  (Row) or `y` (Column) to a running cursor (`padding` + Σ(extent + spacing)); the cross-axis
+  coordinate is `padding`. It then auto-sizes the container — main axis to the content extent,
+  cross axis to the largest child + `2·padding`; with no visible children both axes collapse to
+  `2·padding`.
+- `advance(nowMs)` calls `layout()` then `Segment::advance`. Children use fixed sizes, so the
+  layout is resolved in the same frame.
+
 ## 3. `InputController`
 
 `InputController` is an abstract behavior strategy.
@@ -351,5 +365,7 @@ inline helper in `base/InputController.h`.
   Canvas2D / Cairo adapters.
 - FR-14 maps to `Segment::SnapEdge`, `snapTo`/`clearSnap`/`resolveSnap`, resolved in
   `Segment::advance`.
+- FR-15 maps to `LinearLayout` (base) and `Row` / `Column` (concrete), resolved in
+  `LinearLayout::advance`.
 - FR-12 maps to `Knob`, `ToggleSwitch`, `ProgressBar`, `ComboBox`, `TabView`, `ScrollView`, and
   `LineGraph`, one class per file under `ui/concrete/`.

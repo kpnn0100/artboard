@@ -26,6 +26,9 @@
 #include "../../src/ui/base/RectangleSegment.h"
 #include "../../src/ui/base/CircleSegment.h"
 #include "../../src/ui/base/LabelSegment.h"
+#include "../../src/ui/base/LinearLayout.h"
+#include "../../src/ui/concrete/Row.h"
+#include "../../src/ui/concrete/Column.h"
 // ui/concrete — the finished controls + widgets (one class per file)
 #include "../../src/ui/concrete/Button.h"
 #include "../../src/ui/concrete/Slider.h"
