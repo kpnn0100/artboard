@@ -826,6 +826,26 @@ TEST(Knob_drag_keys_and_render)
     RecordingTarget rec0;
     k0->render(rec0);
     CHECK(rec0.count(K::DrawText) == 0);
+
+    // smooth value animation: advance() springs the display toward the target.
+    auto ks = std::make_shared<Knob>();
+    ks->setValue(0.0);
+    ks->advance(0.0);     // first tick: dt<=0 path, seeds display
+    ks->setValue(1.0);    // jump the target
+    ks->advance(16.0);    // dt>0 spring step
+    double mid = ks->value(); // (target is 1; display lags but value() is the target)
+    CHECK_NEAR(mid, 1.0, 1e-9);
+    ks->advance(999.0);   // huge dt -> clamped to 0.05
+    for (int i = 0; i < 60; ++i) ks->advance(1000.0 + i * 16.0); // settle
+    RecordingTarget recS; ks->render(recS);
+    CHECK(recS.count(K::StrokePath) >= 3);
+
+    // displayNormalized span<=0 branch (min==max) renders without a value arc
+    auto kz = std::make_shared<Knob>();
+    kz->setRange(5.0, 5.0);
+    kz->advance(0.0);
+    RecordingTarget recZ; kz->render(recZ);
+    CHECK(recZ.count(K::StrokePath) >= 2); // track + indicator (no value arc)
 }
 TEST(ToggleSwitch_toggle_animate_render)
 {
@@ -1142,6 +1162,55 @@ TEST(TextBox_full)
     tb->readOnly = true;
     CHECK(!tb->dispatchKey({KeyEvent::Type::Text, 0, "x"})); // read-only -> false
     tb->setStyle(Theme::basicTheme().textBox);
+}
+
+// ───────────────────────── Segment snap ─────────────────────────
+TEST(Segment_snap_edges_and_follow)
+{
+    using SE = Segment::SnapEdge;
+    auto aSeg = std::make_shared<Segment>();
+    aSeg->x.set(10); aSeg->y.set(20); aSeg->width.set(100); aSeg->height.set(40);
+    auto b = std::make_shared<Segment>();
+    b->width.set(60); b->height.set(30);
+
+    // Left of b -> Right of a + 5
+    b->snapTo(aSeg.get(), SE::Left, SE::Right, 5);
+    CHECK(b->hasSnap());
+    b->advance(0);
+    CHECK_NEAR(b->x.value(), 115.0, 1e-9); // 10+100+5
+    aSeg->x.set(60); b->advance(0);
+    CHECK_NEAR(b->x.value(), 165.0, 1e-9); // follows the move
+
+    // Right of b -> Left of a  (b ends just left of a)
+    b->snapTo(aSeg.get(), SE::Right, SE::Left, 0); b->advance(0);
+    CHECK_NEAR(b->x.value(), aSeg->x.value() - b->width.value(), 1e-9);
+
+    // CenterX -> CenterX
+    b->snapTo(aSeg.get(), SE::CenterX, SE::CenterX, 0); b->advance(0);
+    CHECK_NEAR(b->x.value() + b->width.value() * 0.5, aSeg->edgeCoord(SE::CenterX), 1e-9);
+
+    // Vertical edges
+    b->snapTo(aSeg.get(), SE::Top, SE::Bottom, 4); b->advance(0);
+    CHECK_NEAR(b->y.value(), aSeg->edgeCoord(SE::Bottom) + 4, 1e-9);
+    b->snapTo(aSeg.get(), SE::Bottom, SE::Top, 0); b->advance(0);
+    CHECK_NEAR(b->y.value(), aSeg->y.value() - b->height.value(), 1e-9);
+    b->snapTo(aSeg.get(), SE::CenterY, SE::CenterY, 0); b->advance(0);
+    CHECK_NEAR(b->y.value() + b->height.value() * 0.5, aSeg->edgeCoord(SE::CenterY), 1e-9);
+
+    // edgeCoord variants + defensive default
+    CHECK_NEAR(aSeg->edgeCoord(SE::Left), aSeg->x.value(), 1e-9);
+    CHECK_NEAR(aSeg->edgeCoord(SE::Top), aSeg->y.value(), 1e-9);
+    CHECK_NEAR(aSeg->edgeCoord((SE)99), 0.0, 1e-9);
+
+    // invalid myEdge -> edgeInset default + non-horizontal branch (sets y)
+    b->snapTo(aSeg.get(), (SE)99, SE::Bottom, 0); b->advance(0);
+    CHECK_NEAR(b->y.value(), aSeg->edgeCoord(SE::Bottom), 1e-9);
+
+    // guards: clear, null, self are all no-ops
+    b->clearSnap(); CHECK(!b->hasSnap());
+    b->snapTo(nullptr, SE::Left, SE::Right, 0); CHECK(!b->hasSnap());
+    b->snapTo(b.get(), SE::Left, SE::Right, 0); CHECK(!b->hasSnap());
+    b->advance(0); // resolveSnap early-out with no target
 }
 
 int main() { return mini::runAll(); }

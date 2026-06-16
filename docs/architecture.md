@@ -106,7 +106,9 @@ forcing all controls into one monolithic manager class.
 The `ui` module is split by role into two folders, **one class per file** for maintainability:
 
 - **`ui/base/`** — framework foundations and reusable building blocks:
-  - `Segment` (composite interactive base; `clipToBounds` clips children via the HAL `clipRect`),
+  - `Segment` (composite interactive base; `clipToBounds` clips children via the HAL `clipRect`;
+    `snapTo()` constrains one edge to another segment's edge + offset, resolved each `advance()`
+    so a segment follows the one it is snapped to),
   - `InputController` (abstract input strategy; also declares `KeyEvent` and the `isConfirmKey`
     helper),
   - `Property` (animated scalar wrapper),
@@ -147,7 +149,8 @@ header `include/artboard/artboard.h` pulls in every base + concrete header.
 ### 4.5 Knob
 
 - Behavior: `AbstractSlider` value/range; vertical drag (drag distance / sensitivity) and keyboard
-  step; `onChange(value)`.
+  step; `onChange(value)`. `advance()` springs a smoothed display value so the dial eases to the
+  target; the indicator reaches the outer edge of the value arc.
 - Visual composition: drawn directly in `onPaint` — dial circle, sampled arc track, value arc, and
   indicator line over a 270° sweep.
 

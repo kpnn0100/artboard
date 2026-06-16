@@ -93,6 +93,28 @@ A callback-based timeline that lets an application animate **any** value without
 - Depends only on `Tween` + `std::function`; SRP (timing/dispatch only), OCP (new behavior via
   callbacks not new core branches), DIP (no backend, no UI coupling).
 
+## 2e. `Segment` snap constraint
+
+`Segment` can glue one of its edges to another segment's edge with an offset.
+
+### API
+
+- `enum class SnapEdge { Left, Right, Top, Bottom, CenterX, CenterY }`.
+- `snapTo(Segment *target, SnapEdge myEdge, SnapEdge targetEdge, double offset = 0)` — store the
+  constraint (ignored if `target` is null or `this`).
+- `clearSnap()` / `bool hasSnap()`.
+
+### Resolution
+
+- `advance(nowMs)` updates `x/y/width/height`, then calls `resolveSnap()`.
+- `edgeCoord(edge)` = the edge's coordinate in parent space (`Left=x`, `Right=x+w`,
+  `CenterX=x+w/2`, and the `y` analogues). `edgeInset(edge)` = the edge's distance from the
+  segment origin (`0`, `w`, `w/2`, …).
+- Horizontal `myEdge` sets `x = target.edgeCoord(targetEdge) + offset − edgeInset(myEdge)`;
+  vertical sets `y` analogously. So when the target moves, the snapped segment tracks it. The
+  target is held as a raw pointer (same ownership model as the parent pointer; caller keeps it
+  alive). Snapping is pure geometry — no HAL involvement.
+
 ## 3. `InputController`
 
 `InputController` is an abstract behavior strategy.
@@ -272,8 +294,11 @@ inline helper in `base/InputController.h`.
 
 - Extends `Segment` + `AbstractSlider`. `sensitivity` px maps vertical drag to value delta;
   `Left`/`Right` keys step. Fires `onChange(value)`.
-- `onPaint` draws the dial, a 270° arc track (sampled), a value arc up to the normalized value,
-  and the indicator line. Optional `label`.
+- `advance(nowMs)` springs a smoothed *display* value (critically damped) toward the real value,
+  so the dial moves smoothly when the value changes; `onPaint` draws from the smoothed value.
+- `onPaint` draws the dial, a 270° arc track (sampled), a value arc up to the value, and the
+  indicator line — which reaches the **outer edge of the value arc** (arc radius + ½ arc width).
+  Optional `label`.
 
 ### 12.2 `ToggleSwitch`
 
@@ -324,5 +349,7 @@ inline helper in `base/InputController.h`.
   `Segment::clipToBounds`.
 - FR-13 maps to `IRenderTarget::setRadialFill`, `RecordingTarget` (+ `DrawOp::color2`), and the
   Canvas2D / Cairo adapters.
+- FR-14 maps to `Segment::SnapEdge`, `snapTo`/`clearSnap`/`resolveSnap`, resolved in
+  `Segment::advance`.
 - FR-12 maps to `Knob`, `ToggleSwitch`, `ProgressBar`, `ComboBox`, `TabView`, `ScrollView`, and
   `LineGraph`, one class per file under `ui/concrete/`.

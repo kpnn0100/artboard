@@ -145,6 +145,17 @@ approximates it with visible banding). It enables true soft glows that fade cont
 opacity (`outerColor` alpha = 0). Adapters back it with their native gradient (Canvas2D
 `createRadialGradient`, Cairo radial pattern); the `RecordingTarget` records it for tests.
 
+### FR-14 Segment snap constraint
+
+A `Segment` shall be able to **snap** one of its edges to an edge of another segment with an
+offset: `snapTo(target, myEdge, targetEdge, offset)`, where an edge is one of
+`Left/Right/CenterX` (horizontal axis) or `Top/Bottom/CenterY` (vertical axis). After each
+`advance(nowMs)`, the segment's position shall be recomputed so that `myEdge == targetEdge +
+offset` in the parent coordinate space; horizontal edges adjust `x`, vertical edges adjust `y`.
+Consequently, when the target moves the snapped segment follows (e.g. the left of B snapped to
+the right of A keeps B glued to A as A moves). `clearSnap()` removes the constraint; a null or
+self target is ignored. Snap is platform-free geometry (no HAL change).
+
 ## 4. Non-functional Requirements
 
 ### NFR-1 Platform independence

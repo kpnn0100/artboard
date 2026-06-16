@@ -41,6 +41,18 @@ namespace artboard
         Transform worldTransform() const;
         Point toLocal(const Point &worldPoint) const;
 
+        // ---- snap constraint ----
+        // An edge of a segment. Left/Right/CenterX are horizontal (adjust x); Top/Bottom/
+        // CenterY are vertical (adjust y).
+        enum class SnapEdge { Left, Right, Top, Bottom, CenterX, CenterY };
+        /** Glue myEdge to target's targetEdge + offset (parent space); resolved each advance().
+         *  Ignored if target is null or this. */
+        void snapTo(Segment *target, SnapEdge myEdge, SnapEdge targetEdge, double offset = 0.0);
+        void clearSnap() { mSnapTarget = nullptr; }
+        bool hasSnap() const { return mSnapTarget != nullptr; }
+        /** Edge coordinate in the parent's space (from current x/y/width/height). */
+        double edgeCoord(SnapEdge e) const;
+
         virtual void advance(double nowMs);
         void requestFocus();
         bool hasFocus() const { return mFocused; }
@@ -58,8 +70,15 @@ namespace artboard
         Segment *topmostChildAt(const Point &worldPoint) const;
         bool dispatchGesture(const Gesture &g);
         void clearFocusRegistration();
+        static bool isHorizontal(SnapEdge e);
+        double edgeInset(SnapEdge e) const;
+        void resolveSnap();
 
         Segment *mParent = nullptr;
+        Segment *mSnapTarget = nullptr;
+        SnapEdge mSnapMine = SnapEdge::Left;
+        SnapEdge mSnapTheirs = SnapEdge::Right;
+        double mSnapOffset = 0.0;
         Segment *mCapturedChild = nullptr;
         bool mFocused = false;
         std::shared_ptr<InputController> mInputController;

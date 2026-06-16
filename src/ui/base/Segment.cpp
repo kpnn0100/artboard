@@ -105,8 +105,63 @@ namespace artboard
         y.update(nowMs);
         width.update(nowMs);
         height.update(nowMs);
+        resolveSnap();
         for (const auto &child : mChildren)
             child->advance(nowMs);
+    }
+
+    void Segment::snapTo(Segment *target, SnapEdge myEdge, SnapEdge targetEdge, double offset)
+    {
+        if (!target || target == this)
+            return;
+        mSnapTarget = target;
+        mSnapMine = myEdge;
+        mSnapTheirs = targetEdge;
+        mSnapOffset = offset;
+    }
+
+    bool Segment::isHorizontal(SnapEdge e)
+    {
+        return e == SnapEdge::Left || e == SnapEdge::Right || e == SnapEdge::CenterX;
+    }
+
+    double Segment::edgeCoord(SnapEdge e) const
+    {
+        switch (e)
+        {
+        case SnapEdge::Left: return x.value();
+        case SnapEdge::Right: return x.value() + width.value();
+        case SnapEdge::CenterX: return x.value() + width.value() * 0.5;
+        case SnapEdge::Top: return y.value();
+        case SnapEdge::Bottom: return y.value() + height.value();
+        case SnapEdge::CenterY: return y.value() + height.value() * 0.5;
+        }
+        return 0.0; // unreachable for the enum
+    }
+
+    double Segment::edgeInset(SnapEdge e) const
+    {
+        switch (e)
+        {
+        case SnapEdge::Left:
+        case SnapEdge::Top: return 0.0;
+        case SnapEdge::Right: return width.value();
+        case SnapEdge::Bottom: return height.value();
+        case SnapEdge::CenterX: return width.value() * 0.5;
+        case SnapEdge::CenterY: return height.value() * 0.5;
+        }
+        return 0.0; // unreachable for the enum
+    }
+
+    void Segment::resolveSnap()
+    {
+        if (!mSnapTarget)
+            return;
+        const double target = mSnapTarget->edgeCoord(mSnapTheirs) + mSnapOffset - edgeInset(mSnapMine);
+        if (isHorizontal(mSnapMine))
+            x.set(target);
+        else
+            y.set(target);
     }
 
     void Segment::requestFocus()

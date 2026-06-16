@@ -64,6 +64,7 @@ package scene {
 }
 
 package ui {
+  enum SnapEdge
   class Property
   class KeyEvent
   abstract class InputController
@@ -87,6 +88,7 @@ package ui {
 
   Segment --|> Drawable
   Segment ..|> InputTarget
+  Segment ..> SnapEdge
   Segment *--> Property
   Segment o--> Segment
   Segment o--> InputController

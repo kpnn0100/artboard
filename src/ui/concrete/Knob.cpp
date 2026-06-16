@@ -23,6 +23,31 @@ namespace artboard
             onChange(value());
     }
 
+    double Knob::displayNormalized() const
+    {
+        if (!mDisplayInit) { mDisplay = value(); mDisplayInit = true; }
+        const double span = maximum() - minimum();
+        if (span <= 0.0) return 0.0;
+        double n = (mDisplay - minimum()) / span;
+        return n < 0.0 ? 0.0 : (n > 1.0 ? 1.0 : n);
+    }
+
+    void Knob::advance(double nowMs)
+    {
+        double dt = mLastMs < 0.0 ? 0.0 : (nowMs - mLastMs) / 1000.0;
+        mLastMs = nowMs;
+        if (!mDisplayInit) { mDisplay = value(); mDisplayInit = true; }
+        if (dt > 0.0)
+        {
+            if (dt > 0.05) dt = 0.05;
+            const double omega = 18.0; // critically-damped; ~0.2s settle, continuous velocity
+            const double acc = -2.0 * omega * mVel - omega * omega * (mDisplay - value());
+            mVel += acc * dt;
+            mDisplay += mVel * dt;
+        }
+        Segment::advance(nowMs);
+    }
+
     void Knob::onPaint(IRenderTarget &t) const
     {
         const double w = width.value();
@@ -31,7 +56,7 @@ namespace artboard
         const double cx = w * 0.5;
         const double cy = avail * 0.5;
         const double arcR = r - mStyle.arcWidth;
-        const double norm = normalizedValue();
+        const double norm = displayNormalized();
 
         drawCircle(t, cx, cy, r, mStyle.dial.paint);
 
@@ -67,11 +92,13 @@ namespace artboard
             t.strokePath();
         }
 
-        // Indicator line.
+        // Indicator line — reaches the outer edge of the value arc
+        // (arc radius + half the arc thickness).
+        const double indR = arcR + mStyle.arcWidth * 0.5;
         const double ia = knobSweepAngle(norm);
         t.beginPath();
         t.moveTo(cx, cy);
-        t.lineTo(cx + std::cos(ia) * arcR, cy + std::sin(ia) * arcR);
+        t.lineTo(cx + std::cos(ia) * indR, cy + std::sin(ia) * indR);
         t.setStroke(mStyle.indicatorColor, mStyle.arcWidth);
         t.strokePath();
 
