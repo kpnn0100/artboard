@@ -73,6 +73,12 @@ above it is updated.**
    (§3): web via `./build.sh --target linux-web-server` from `arstro/`; native (Cairo) via the
    relevant target. The `RecordingTarget` is updated and tested in step 5.
 8. **SYNC CHECK (§5).** If any artifact lags, the task is not done.
+9. **COMMIT.** Once tests pass (`0 failed`, coverage met) and docs/puml/tests are in sync,
+   **commit the change** before moving on — one focused commit per implemented+tested feature,
+   in every repo it touched (Artboard, and the umbrella with its submodule bump). Do not batch
+   several features into one commit, and do not leave verified work uncommitted. Use the
+   project's commit identity and end the message with the `Co-Authored-By` trailer. Push only
+   when asked (or when the user has set up push access).
 
 ## 2. SOLID (how to add code)
 
@@ -161,6 +167,8 @@ the source of truth, the conformance reference, and the floor every adapter must
 - [ ] `./build/artboard_tests` reports `0 failed`; touched core sources at 100% line coverage.
 - [ ] SOLID respected (new behavior = new type; `IRenderTarget` stayed minimal).
 - [ ] Branding stays `artboard`/`arstro`.
+- [ ] **Committed** — the implemented + tested feature is committed (one focused commit per
+      feature, every touched repo), not left in the working tree.
 
 If you changed code but not the docs/puml/tests (or extended the HAL but not every adapter),
-you are **not done**.
+or you left a verified feature uncommitted, you are **not done**.
