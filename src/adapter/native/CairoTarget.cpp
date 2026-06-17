@@ -83,16 +83,18 @@ namespace artboard
         cairo_close_path(mContext);
     }
 
+    // fill/stroke PRESERVE the current path (matching Canvas2D and the RecordingTarget op
+    // stream); the path is cleared only by the next beginPath()/clipRect(). This lets a shape
+    // fill then stroke the same path — how applyPaint draws a filledStroked (body + border).
+    // Clearing the path here (cairo_new_path) would silently drop every border on native.
     void CairoTarget::fillPath()
     {
         cairo_fill_preserve(mContext);
-        cairo_new_path(mContext);
     }
 
     void CairoTarget::strokePath()
     {
         cairo_stroke_preserve(mContext);
-        cairo_new_path(mContext);
     }
 
     void CairoTarget::drawText(const std::string &text, double x, double y, double sizePx)

@@ -374,6 +374,30 @@ TEST(Rectangle_sharp_and_rounded)
     CHECK(t.count(K::FillPath) == 1 && t.count(K::StrokePath) == 1);
 }
 
+TEST(FilledStroked_shares_one_path_FR16)
+{
+    // FR-16: fill then stroke paint the SAME path (filled body + border). The op stream must
+    // build the path once, then FillPath, then StrokePath — with NO BeginPath in between.
+    // Adapters preserve the path across fill/stroke and clear it only on the next beginPath;
+    // an adapter that cleared it between would silently drop the border (the native bug fixed
+    // by removing cairo_new_path from CairoTarget::fillPath/strokePath).
+    RecordingTarget t;
+    Rectangle r(Rect{0, 0, 10, 10}, Paint::filledStroked(Color::rgba(0, 0, 0), Color::rgba(255, 255, 255), 2));
+    r.render(t);
+
+    const auto &ops = t.ops();
+    int begin = -1, fill = -1, stroke = -1;
+    for (size_t i = 0; i < ops.size(); ++i)
+    {
+        if (ops[i].kind == K::BeginPath) begin = (int)i;
+        if (ops[i].kind == K::FillPath) fill = (int)i;
+        if (ops[i].kind == K::StrokePath) stroke = (int)i;
+    }
+    CHECK(begin >= 0 && fill > begin && stroke > fill); // begin -> ... -> fill -> stroke
+    // exactly one of each, and no second BeginPath separating fill from stroke
+    CHECK(t.count(K::BeginPath) == 1 && t.count(K::FillPath) == 1 && t.count(K::StrokePath) == 1);
+}
+
 TEST(Line_and_Polyline)
 {
     RecordingTarget t;

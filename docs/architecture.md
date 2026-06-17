@@ -87,6 +87,13 @@ forcing all controls into one monolithic manager class.
   because solid fills can only approximate it by stacking translucent shapes (which bands); every
   adapter maps it to a native gradient (Canvas2D `createRadialGradient`, Cairo radial pattern), so
   glows fade continuously to zero opacity. `RecordingTarget` records it.
+- The HAL keeps **one current path** (built by `beginPath`/`moveTo`/`lineTo`/`quadTo`/`cubicTo`/
+  `closePath`). The lifecycle is fixed and must be identical on every adapter: `beginPath` clears
+  the path, while `fillPath` and `strokePath` **paint and preserve** it. Preserving the path is
+  what lets a shape fill then stroke the *same* path — how `applyPaint` draws a `filledStroked`
+  paint (filled body + border). An adapter that clears the path inside `fillPath`/`strokePath`
+  (e.g. a stray `cairo_new_path`) silently drops every border and diverges from the others, so it
+  is a bug — the path is only reset by the next `beginPath`/`clipRect`.
 - `RecordingTarget` records draw operations for tests and inspection.
 
 ### 3.4 `input`

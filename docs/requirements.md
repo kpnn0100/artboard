@@ -166,6 +166,23 @@ sum of child extents + gaps + padding; cross axis = largest child + padding). Wi
 children the container collapses to `2·padding` on each axis. This is platform-free geometry (no
 HAL change) and lets a `Column` of `Row`s express grouped control layouts.
 
+### FR-16 Current-path lifecycle (paint primitive contract)
+
+The render HAL maintains a single **current path** built by `beginPath`/`moveTo`/`lineTo`/
+`quadTo`/`cubicTo`/`closePath`. The lifecycle shall be identical on every adapter:
+
+- `beginPath()` **clears** the current path and starts a new one.
+- `fillPath()` paints the interior of the current path and **preserves** it.
+- `strokePath()` paints the outline of the current path and **preserves** it.
+
+Because fill and stroke preserve the path, a shape may fill and then stroke the *same* path —
+this is exactly how `applyPaint` realises a `filledStroked` paint (a filled shape with a
+border). The path persists until the next `beginPath` (or `clipRect`, which also begins a fresh
+path). An adapter that discards the path inside `fillPath`/`strokePath` would silently drop the
+border of every filled-and-stroked shape, making that platform diverge from the others; this is
+forbidden. The result must be pixel-equivalent across web (Canvas2D), native (Cairo), and the
+`RecordingTarget` op stream.
+
 ## 4. Non-functional Requirements
 
 ### NFR-1 Platform independence
