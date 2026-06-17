@@ -18,6 +18,7 @@ namespace artboard
         mMin = minimum;
         mMax = maximum < minimum ? minimum : maximum;
         setValue(mValue);
+        mDefault = clamp(mDefault); // keep the snap-back target inside the new range
     }
 
     void AbstractSlider::setValue(double value)

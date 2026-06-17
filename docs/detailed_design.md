@@ -184,6 +184,7 @@ types without creating a deep inheritance chain.
 - `value`
 - `minimum`
 - `maximum`
+- `defaultValue` — snap-back target; defaults to the initial value
 - `isAnalog`
 - `dragType`
 
@@ -191,6 +192,9 @@ types without creating a deep inheritance chain.
 
 - Value is always clamped to the current range.
 - Normalized value is derived from current value and range.
+- `defaultValue` is clamped to the range, and re-clamped when `setRange` changes the range.
+- `resetToDefault()` sets the value to `defaultValue`; concrete controls call it on a
+  double-click and then emit `onChange` (see FR-9a).
 
 ## 7. `Slider`
 

@@ -113,6 +113,12 @@ namespace artboard
     bool Knob::handleGesture(const Gesture &g, const Point &localPoint)
     {
         using T = Gesture::Type;
+        if (g.type == T::DoubleClick)
+        {
+            resetToDefault(); // snap back to the default value (display springs there)
+            emitChange();
+            return true;
+        }
         if (g.type == T::DragStart)
         {
             mDragStartValue = value();

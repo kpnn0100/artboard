@@ -840,6 +840,13 @@ TEST(Knob_drag_keys_and_render)
     CHECK(!k->dispatchKey({KeyEvent::Type::Down, 65})); // non-arrow ignored
     k->onGesture({Gesture::Type::Click, {0, 0}, {0, 0}, PointerButton::Left}); // default branch
 
+    // FR-9a: double-click resets to the default value and emits onChange.
+    k->setDefault(0.25);
+    last = -1;
+    k->onGesture({Gesture::Type::DoubleClick, {0, 0}, {0, 0}, PointerButton::Left});
+    CHECK_NEAR(k->value(), 0.25, 1e-9);
+    CHECK_NEAR(last, 0.25, 1e-9);
+
     RecordingTarget rec;
     k->render(rec);
     CHECK(rec.count(K::StrokePath) >= 3); // track + value + indicator
@@ -1130,6 +1137,11 @@ TEST(Slider_full)
     sl->onGesture({Gesture::Type::Click, {-10, 14}, {-10, 14}, PointerButton::Left}); // clamp low
     sl->onGesture({Gesture::Type::Click, {200, 14}, {200, 14}, PointerButton::Left});  // clamp high
     sl->onGesture({Gesture::Type::Move, {10, 10}, {10, 10}, PointerButton::Left}); // default fallback
+    // FR-9a: double-click resets to the default value.
+    sl->setValue(0.9);
+    sl->setDefault(0.3);
+    sl->onGesture({Gesture::Type::DoubleClick, {120, 14}, {120, 14}, PointerButton::Left});
+    CHECK_NEAR(sl->value(), 0.3, 1e-9);
     sl->requestFocus();
     sl->setAnalog(true);
     sl->dispatchKey({KeyEvent::Type::Down, 39}); // right
@@ -1151,6 +1163,22 @@ TEST(AbstractSlider_clamp_reversed_range)
 {
     AbstractSlider s(0.0, 5.0, 1.0); // max < min -> clamp returns mMin
     CHECK_NEAR(s.value(), 5.0, 1e-9);
+}
+TEST(AbstractSlider_default_value)
+{
+    AbstractSlider s(0.7, 0.0, 1.0);
+    CHECK_NEAR(s.defaultValue(), 0.7, 1e-9); // default seeds from the initial value
+
+    s.setValue(0.2);
+    s.resetToDefault();
+    CHECK_NEAR(s.value(), 0.7, 1e-9);
+
+    s.setDefault(2.0); // clamped into [0,1]
+    CHECK_NEAR(s.defaultValue(), 1.0, 1e-9);
+
+    s.setDefault(0.4);
+    s.setRange(0.0, 0.25); // shrinking the range re-clamps the default
+    CHECK_NEAR(s.defaultValue(), 0.25, 1e-9);
 }
 TEST(Checkbox_full)
 {

@@ -24,6 +24,11 @@ namespace artboard
 
     bool Slider::handleGesture(const Gesture &g, const Point &localPoint)
     {
+        if (g.type == Gesture::Type::DoubleClick)
+        {
+            resetToDefault(); // double-click restores the default value
+            return true;
+        }
         if (g.type == Gesture::Type::Down || g.type == Gesture::Type::Drag || g.type == Gesture::Type::Click)
         {
             setValue(valueForLocalX(localPoint.x));

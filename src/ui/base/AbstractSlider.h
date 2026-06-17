@@ -15,16 +15,20 @@ namespace artboard
             : mValue(value), mMin(minimum), mMax(maximum)
         {
             setValue(value);
+            mDefault = mValue; // default snaps back to the initial value until set otherwise
         }
 
         double value() const { return mValue; }
         double minimum() const { return mMin; }
         double maximum() const { return mMax; }
+        double defaultValue() const { return mDefault; }
         bool isAnalog() const { return mIsAnalog; }
         DragType dragType() const { return mDragType; }
 
         void setRange(double minimum, double maximum);
         void setValue(double value);
+        void setDefault(double value) { mDefault = clamp(value); } // snap-back target (double-click)
+        void resetToDefault() { setValue(mDefault); }
         void setAnalog(bool analog) { mIsAnalog = analog; }
         void setDragType(DragType dragType) { mDragType = dragType; }
 
@@ -37,6 +41,7 @@ namespace artboard
         double mValue = 0.0;
         double mMin = 0.0;
         double mMax = 1.0;
+        double mDefault = 0.0;
         bool mIsAnalog = true;
         DragType mDragType = DragType::Absolute;
     };

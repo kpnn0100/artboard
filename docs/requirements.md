@@ -102,6 +102,16 @@ The slider design shall separate behavior from rendering by introducing an `Abst
 owns slider state without visual concerns, and a concrete `Slider` that renders using child
 segments.
 
+### FR-9a Default value and double-click reset
+
+Every ranged control built on `AbstractSlider` (`Slider`, `Knob`) shall carry a **default
+value** within `[min,max]`. The default is settable (`setDefault(v)`, clamped to the range and
+re-clamped when the range changes) and defaults to the control's initial value. A
+**double-click** on the control resets its value to the default and emits `onChange(default)`
+(the same notification a drag would emit), so a user can restore a parameter's nominal setting
+with one gesture. The `Knob`'s smoothed display springs to the default like any other value
+change.
+
 ### FR-10 Parent-child motion
 
 When a parent segment moves, all child segments shall move with it through composed transforms.
