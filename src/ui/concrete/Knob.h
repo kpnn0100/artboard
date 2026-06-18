@@ -19,6 +19,7 @@ namespace artboard
         int sourceId = 0;
         double depth = 0.0; // [-1,1] of the full range
         Color color;
+        bool bipolar = false; // true: source swings [-1,1] -> ring spans base ± |depth|
     };
 
     class Knob : public Segment, public AbstractSlider
@@ -39,7 +40,7 @@ namespace artboard
         // source is already routed, just re-colours it). Each routing renders as an
         // outer ring; dragging that ring (vertical) sets its depth.
         void setModBus(const ModBus *bus) { mBus = bus; }
-        void addModulation(int sourceId, const Color &color, double depth = 0.25);
+        void addModulation(int sourceId, const Color &color, double depth = 0.25, bool bipolar = false);
         void setModDepth(int sourceId, double depth);
         void clearModulations() { mMods.clear(); }
         const std::vector<KnobMod> &modulations() const { return mMods; }

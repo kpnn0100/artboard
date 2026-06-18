@@ -217,8 +217,9 @@ not on any concrete source. The knob's **modulated value** = `base + Σ depthᵢ
 busValue(sourceᵢ) · range`, clamped to the range.
 
 Each routing renders as a concentric **outer ring** (Serum-style) in the source
-colour: an arc from the base value to its reach (`base+depth`) plus a live dot at the
-current modulated value. Interaction: a press whose radius falls on a ring drags that
+colour: a **unipolar** routing arcs from the base value to its reach (`base+depth`); a
+**bipolar** routing (a source that swings `[-1,1]`, e.g. an LFO) arcs both ways,
+`base ± |depth|`. A live dot marks the current modulated value. Interaction: a press whose radius falls on a ring drags that
 ring **vertically to set its depth**; a press on the dial drags the value as before; a
 double-click on a ring **removes** that routing (a double-click on the dial still
 resets to default, FR-9a). `addModulation(id,colour)` adds a routing (or re-colours an

@@ -30,11 +30,11 @@ namespace artboard
         return -1;
     }
 
-    void Knob::addModulation(int sourceId, const Color &color, double depth)
+    void Knob::addModulation(int sourceId, const Color &color, double depth, bool bipolar)
     {
         for (auto &m : mMods)
-            if (m.sourceId == sourceId) { m.color = color; return; } // already routed: recolour
-        mMods.push_back(KnobMod{sourceId, clampPM1(depth), color});
+            if (m.sourceId == sourceId) { m.color = color; m.bipolar = bipolar; return; } // re-route
+        mMods.push_back(KnobMod{sourceId, clampPM1(depth), color, bipolar});
     }
 
     void Knob::setModDepth(int sourceId, double depth)
@@ -156,8 +156,18 @@ namespace artboard
         for (size_t i = 0; i < mMods.size(); ++i)
         {
             const double rr = r + 4.0 + (double)i * 5.0;
-            const double reach = clamp01(norm + mMods[i].depth);
-            const double n0 = norm < reach ? norm : reach, n1 = norm < reach ? reach : norm;
+            // unipolar: arc base→base+depth; bipolar (LFO): arc base±|depth| (both directions)
+            double n0, n1;
+            if (mMods[i].bipolar)
+            {
+                const double d = mMods[i].depth < 0 ? -mMods[i].depth : mMods[i].depth;
+                n0 = clamp01(norm - d); n1 = clamp01(norm + d);
+            }
+            else
+            {
+                const double reach = clamp01(norm + mMods[i].depth);
+                n0 = norm < reach ? norm : reach; n1 = norm < reach ? reach : norm;
+            }
             // depth arc from the base value to its reach, in the source colour
             t.beginPath();
             const int steps = 16;

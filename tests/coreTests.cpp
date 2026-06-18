@@ -852,6 +852,14 @@ TEST(Knob_modulation_value_and_render)
     k->setModDepth(1, -0.3);                       // reach < base branch in onPaint
     RecordingTarget r2; k->render(r2);
     CHECK(r2.count(K::StrokePath) > baseStrokes);
+
+    // bipolar routing: ring spans base ± |depth| (the LFO 2-direction case)
+    auto kb = std::make_shared<Knob>();
+    kb->setRange(0.0, 1.0); kb->setValue(0.5);
+    kb->addModulation(3, Color::rgba(180, 120, 255), 0.3, /*bipolar=*/true);
+    CHECK(kb->modulations()[0].bipolar);
+    RecordingTarget rbp; kb->render(rbp);
+    CHECK(rbp.count(K::StrokePath) > baseStrokes);
 }
 TEST(Knob_modulation_ring_drag_remove_and_value_drag)
 {
