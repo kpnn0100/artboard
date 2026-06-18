@@ -33,6 +33,11 @@ namespace artboard
         // transform space). The next fillPath() uses it. A smooth gradient is a primitive
         // because solid fills can only approximate it by stacking translucent shapes.
         virtual void setRadialFill(double cx, double cy, double radius, const Color &inner, const Color &outer) = 0;
+        // Two-stop linear gradient fill along the axis (x0,y0)->(x1,y1) in the current
+        // transform space (constant perpendicular to the axis). The next fillPath() uses it.
+        // A primitive for the same reason as the radial fill: a smooth ramp cannot be built
+        // from solid fills without banding. Gives depth/shading ramps.
+        virtual void setLinearFill(double x0, double y0, double x1, double y1, const Color &start, const Color &end) = 0;
         virtual void setStroke(const Color &c, double width) = 0;
 
         // ---- path building ----

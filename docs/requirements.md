@@ -155,6 +155,20 @@ approximates it with visible banding). It enables true soft glows that fade cont
 opacity (`outerColor` alpha = 0). Adapters back it with their native gradient (Canvas2D
 `createRadialGradient`, Cairo radial pattern); the `RecordingTarget` records it for tests.
 
+### FR-17 Linear-gradient fill primitive
+
+The render HAL shall provide a two-stop linear-gradient fill,
+`setLinearFill(x0, y0, x1, y1, startColor, endColor)`, which sets the current fill so that a
+subsequent `fillPath()` paints a smooth linear gradient running along the axis from `(x0, y0)`
+(`startColor`) to `(x1, y1)` (`endColor`), in the current transform space; the gradient is
+constant along lines perpendicular to that axis. It replaces any solid/radial fill until the
+next `setFill`/`setRadialFill`/`setLinearFill`. Like the radial fill, a smooth linear gradient
+**cannot** be expressed by solid fills (stacking translucent bands shows visible steps), so it
+is a HAL primitive. It enables depth/shading ramps (panel backgrounds, a receding "floor" under
+a 3-D plot, vertical fades to zero opacity). Adapters back it with their native gradient
+(Canvas2D `createLinearGradient`, Cairo linear pattern); the `RecordingTarget` records it for
+tests.
+
 ### FR-14 Segment snap constraint
 
 A `Segment` shall be able to **snap** one of its edges to an edge of another segment with an

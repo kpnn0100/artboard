@@ -87,6 +87,11 @@ forcing all controls into one monolithic manager class.
   because solid fills can only approximate it by stacking translucent shapes (which bands); every
   adapter maps it to a native gradient (Canvas2D `createRadialGradient`, Cairo radial pattern), so
   glows fade continuously to zero opacity. `RecordingTarget` records it.
+- It exposes a second paint-server primitive, `setLinearFill(x0,y0,x1,y1,start,end)` — a two-stop
+  linear gradient along an axis that the next `fillPath()` uses. Same justification as the radial
+  fill (a smooth ramp can't be built from solid fills without banding); every adapter maps it to a
+  native gradient (Canvas2D `createLinearGradient`, Cairo linear pattern). It gives depth/shading
+  ramps (panel gradients, a receding floor under a 3-D plot). `RecordingTarget` records it.
 - The HAL keeps **one current path** (built by `beginPath`/`moveTo`/`lineTo`/`quadTo`/`cubicTo`/
   `closePath`). The lifecycle is fixed and must be identical on every adapter: `beginPath` clears
   the path, while `fillPath` and `strokePath` **paint and preserve** it. Preserving the path is

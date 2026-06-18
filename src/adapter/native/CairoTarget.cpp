@@ -40,6 +40,15 @@ namespace artboard
         cairo_pattern_destroy(p);
     }
 
+    void CairoTarget::setLinearFill(double x0, double y0, double x1, double y1, const Color &start, const Color &end)
+    {
+        cairo_pattern_t *p = cairo_pattern_create_linear(x0, y0, x1, y1);
+        cairo_pattern_add_color_stop_rgba(p, 0.0, start.r, start.g, start.b, start.a);
+        cairo_pattern_add_color_stop_rgba(p, 1.0, end.r, end.g, end.b, end.a);
+        cairo_set_source(mContext, p);
+        cairo_pattern_destroy(p);
+    }
+
     void CairoTarget::setStroke(const Color &c, double width)
     {
         cairo_set_source_rgba(mContext, c.r, c.g, c.b, c.a);

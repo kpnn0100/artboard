@@ -33,6 +33,14 @@ namespace artboard
         op.color2 = outer;
         mOps.push_back(op);
     }
+    void RecordingTarget::setLinearFill(double x0, double y0, double x1, double y1, const Color &start, const Color &end)
+    {
+        DrawOp op{K::SetLinearFill};
+        op.args[0] = x0; op.args[1] = y0; op.args[2] = x1; op.args[3] = y1;
+        op.color = start;
+        op.color2 = end;
+        mOps.push_back(op);
+    }
     void RecordingTarget::setStroke(const Color &c, double width)
     {
         DrawOp op{K::SetStroke};

@@ -289,6 +289,18 @@ types without creating a deep inheritance chain.
 - Rationale: a smooth gradient to zero opacity (a soft glow) cannot be expressed by solid fills;
   stacking translucent shapes only approximates it and bands. This is the minimal paint-server
   primitive (two stops, radial) needed for glows; richer gradients can extend it later (OCP).
+- `IRenderTarget::setLinearFill(x0, y0, x1, y1, start, end)` sets the current fill to a two-stop
+  linear gradient along the axis `(x0,y0)→(x1,y1)` (current transform space; constant
+  perpendicular to the axis). The next `fillPath()` paints with it; superseded by the next
+  `setFill`/`setRadialFill`/`setLinearFill`.
+- `RecordingTarget` records `DrawOp::Kind::SetLinearFill` with `args[0..3] = x0,y0,x1,y1`,
+  `color = start`, `color2 = end`.
+- `Canvas2DTarget`: `g = ctx.createLinearGradient(x0,y0,x1,y1)` + two colour stops →
+  `ctx.fillStyle = g`. `CairoTarget`: `cairo_pattern_create_linear(x0,y0,x1,y1)` + two stops →
+  `cairo_set_source`.
+- Rationale: same as the radial fill — a smooth ramp cannot be built from solid fills without
+  banding. Linear is the second canonical gradient (depth/shading ramps); it reuses
+  `DrawOp::color2`.
 
 ### Segment wiring
 
@@ -367,6 +379,8 @@ inline helper in `base/InputController.h`.
   `Segment::clipToBounds`.
 - FR-13 maps to `IRenderTarget::setRadialFill`, `RecordingTarget` (+ `DrawOp::color2`), and the
   Canvas2D / Cairo adapters.
+- FR-17 maps to `IRenderTarget::setLinearFill`, `RecordingTarget` (`DrawOp::Kind::SetLinearFill`,
+  reusing `DrawOp::color2`), and the Canvas2D / Cairo adapters.
 - FR-14 maps to `Segment::SnapEdge`, `snapTo`/`clearSnap`/`resolveSnap`, resolved in
   `Segment::advance`.
 - FR-15 maps to `LinearLayout` (base) and `Row` / `Column` (concrete), resolved in

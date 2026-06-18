@@ -798,6 +798,21 @@ TEST(RecordingTarget_setRadialFill_records)
     CHECK(op.color == inner);
     CHECK(op.color2 == outer);
 }
+TEST(RecordingTarget_setLinearFill_records)
+{
+    RecordingTarget rec;
+    Color start = Color::rgba(10, 20, 30, 255);
+    Color end = Color::rgba(40, 50, 60, 0); // fade to zero opacity along the axis
+    rec.setLinearFill(3, 4, 5, 6, start, end);
+    CHECK(rec.count(K::SetLinearFill) == 1);
+    const auto &op = rec.ops()[0];
+    CHECK_NEAR(op.args[0], 3.0, 1e-9);
+    CHECK_NEAR(op.args[1], 4.0, 1e-9);
+    CHECK_NEAR(op.args[2], 5.0, 1e-9);
+    CHECK_NEAR(op.args[3], 6.0, 1e-9);
+    CHECK(op.color == start);
+    CHECK(op.color2 == end);
+}
 TEST(Segment_clipToBounds_emits_clip_around_children)
 {
     auto root = std::make_shared<Segment>();

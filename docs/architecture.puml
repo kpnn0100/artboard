@@ -27,6 +27,7 @@ package render {
   interface IRenderTarget {
     +clipRect(x,y,w,h)
     +setRadialFill(cx,cy,r,inner,outer)
+    +setLinearFill(x0,y0,x1,y1,start,end)
   }
   class RecordingTarget
   RecordingTarget ..|> IRenderTarget
