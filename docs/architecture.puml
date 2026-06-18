@@ -78,6 +78,7 @@ package ui {
   class Row
   class Column
   class AbstractSlider
+  class ModBus
   class Slider
   class Button
   class Checkbox
@@ -109,6 +110,7 @@ package ui {
   TextBox --|> Segment
   Knob --|> Segment
   Knob --|> AbstractSlider
+  Knob ..> ModBus
   ToggleSwitch --|> Segment
   ProgressBar --|> Segment
   ComboBox --|> Segment

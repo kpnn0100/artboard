@@ -813,6 +813,74 @@ TEST(RecordingTarget_setLinearFill_records)
     CHECK(op.color == start);
     CHECK(op.color2 == end);
 }
+TEST(ModBus_set_value_clear)
+{
+    ModBus b;
+    CHECK_NEAR(b.value(7), 0.0, 1e-9); // unknown id -> 0
+    b.set(7, 0.6);
+    CHECK_NEAR(b.value(7), 0.6, 1e-9);
+    b.clear();
+    CHECK_NEAR(b.value(7), 0.0, 1e-9);
+}
+TEST(Knob_modulation_value_and_render)
+{
+    auto k = std::make_shared<Knob>();
+    k->setRange(0.0, 1.0);
+    k->setValue(0.5);
+    CHECK_NEAR(k->modulatedValue(), 0.5, 1e-9); // no bus -> base value
+
+    ModBus bus;
+    k->setModBus(&bus);
+    k->addModulation(1, Color::rgba(255, 0, 0), 0.25);
+    CHECK((int)k->modulations().size() == 1);
+    k->addModulation(1, Color::rgba(0, 255, 0), 0.9); // same source -> recolour, no dup
+    CHECK((int)k->modulations().size() == 1);
+    k->setModDepth(1, 0.4);
+    k->setModDepth(123, 0.5); // unknown source -> no-op
+    bus.set(1, 1.0);
+    CHECK_NEAR(k->modulatedValue(), 0.9, 1e-9); // 0.5 + 0.4*1.0*range(1)
+    bus.set(1, 5.0);
+    CHECK_NEAR(k->modulatedValue(), 1.0, 1e-9); // clamp high
+    bus.set(1, -5.0);
+    CHECK_NEAR(k->modulatedValue(), 0.0, 1e-9); // clamp low
+
+    auto bare = std::make_shared<Knob>();
+    RecordingTarget rb; bare->render(rb);
+    const int baseStrokes = rb.count(K::StrokePath);
+    RecordingTarget r1; k->render(r1);
+    CHECK(r1.count(K::StrokePath) > baseStrokes); // ring arc adds a stroke
+    k->setModDepth(1, -0.3);                       // reach < base branch in onPaint
+    RecordingTarget r2; k->render(r2);
+    CHECK(r2.count(K::StrokePath) > baseStrokes);
+}
+TEST(Knob_modulation_ring_drag_remove_and_value_drag)
+{
+    using T = Gesture::Type;
+    auto k = std::make_shared<Knob>();
+    k->width.set(80.0); k->height.set(80.0); // no label -> r = 37, ring0 at radius 41
+    k->setRange(0.0, 1.0); k->setValue(0.5); k->setDefault(0.5);
+    k->addModulation(2, Color::rgba(0, 0, 255), 0.0);
+
+    const Point onRing{40.0, -1.0};   // 41px above centre (40,40) -> ring0 band
+    k->onGesture({T::Down, onRing, onRing, PointerButton::Left});
+    k->onGesture({T::DragStart, onRing, onRing, PointerButton::Left});
+    k->onGesture({T::Drag, {40.0, -21.0}, onRing, PointerButton::Left}); // dy = +20 -> depth up
+    CHECK(k->modulations()[0].depth > 0.0);
+
+    k->onGesture({T::DoubleClick, onRing, onRing, PointerButton::Left}); // remove the routing
+    CHECK(k->modulations().empty());
+
+    const Point onDial{40.0, 40.0};
+    k->onGesture({T::Down, onDial, onDial, PointerButton::Left});       // radius 0 -> value drag
+    k->onGesture({T::DragStart, onDial, onDial, PointerButton::Left});
+    const double before = k->value();
+    k->onGesture({T::Drag, {40.0, 20.0}, onDial, PointerButton::Left}); // dy +20 -> value up
+    CHECK(k->value() > before);
+
+    k->setValue(0.2);
+    k->onGesture({T::DoubleClick, onDial, onDial, PointerButton::Left}); // dial dbl-click -> reset
+    CHECK_NEAR(k->value(), 0.5, 1e-9);
+}
 TEST(Segment_clipToBounds_emits_clip_around_children)
 {
     auto root = std::make_shared<Segment>();

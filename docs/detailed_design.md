@@ -329,6 +329,14 @@ inline helper in `base/InputController.h`.
 - `onPaint` draws the dial, a 270° arc track (sampled), a value arc up to the value, and the
   indicator line — which reaches the **outer edge of the value arc** (arc radius + ½ arc width).
   Optional `label`.
+- **Modulation (FR-18).** Holds `std::vector<KnobMod>` (`{sourceId, depth∈[-1,1], color}`) and a
+  `const ModBus*`. `modulatedValue()` = `clamp(base + Σ depthᵢ·bus.value(sourceᵢ)·range)`. `onPaint`
+  draws one concentric ring per routing (radius `r+4+i·5`): a depth arc from the base to `base+depth`
+  in the source colour plus a live dot at the modulated value. `handleGesture` picks the drag mode by
+  press radius — `ringAtRadius()` selects a ring band (vertical drag → `setModDepth`) else the dial
+  (value drag); double-click on a ring erases that routing, on the dial resets to default.
+- `ModBus` (in `ui/base/`) maps `sourceId → value`; sources publish with `set`, targets read with
+  `value`. It is the minimal seam that decouples a `Knob` target from concrete sources.
 
 ### 12.2 `ToggleSwitch`
 
@@ -385,5 +393,7 @@ inline helper in `base/InputController.h`.
   `Segment::advance`.
 - FR-15 maps to `LinearLayout` (base) and `Row` / `Column` (concrete), resolved in
   `LinearLayout::advance`.
+- FR-18 maps to `KnobMod` + `Knob::addModulation/setModDepth/modulatedValue` and the `ModBus`
+  (`ui/base/ModBus.h`); the depth rings render and drag in `Knob::onPaint`/`handleGesture`.
 - FR-12 maps to `Knob`, `ToggleSwitch`, `ProgressBar`, `ComboBox`, `TabView`, `ScrollView`, and
   `LineGraph`, one class per file under `ui/concrete/`.

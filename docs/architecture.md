@@ -128,6 +128,7 @@ The `ui` module is split by role into two folders, **one class per file** for ma
   - `Property` (animated scalar wrapper),
   - `Theme` (all concrete visual style structs + the baseline theme),
   - `AbstractSlider` (ranged value/behavior with no visual concerns),
+  - `ModBus` (the live modulation-source value bus: source id → value, read by targets),
   - `RectangleSegment`, `CircleSegment`, `LabelSegment` (reusable visual nodes).
 - **`ui/concrete/`** — the finished, themed controls, each its own file:
   - baseline: `Button`, `Slider`, `Checkbox`, `TextBox`,
@@ -137,6 +138,12 @@ The `ui` module is split by role into two folders, **one class per file** for ma
 Concrete controls reuse `Segment` composition, the shared `drawRoundedRect`/`drawCircle` helpers
 (in `scene`), and `AbstractSlider` where a ranged value applies (`Slider`, `Knob`). The aggregate
 header `include/artboard/artboard.h` pulls in every base + concrete header.
+
+`Knob` is also a **modulation target**: it holds a list of `KnobMod` routings (source id + signed
+depth + colour) and reads live source values from a `ModBus`, so it draws Serum-style depth rings
+and computes a modulated value without depending on any concrete source. Source→target assignment
+(drag-and-drop) is orchestrated by the application, which then calls `Knob::addModulation`; the bus
+keeps the seam minimal (a target needs only `value(id)`).
 
 ## 4. Control Architecture
 

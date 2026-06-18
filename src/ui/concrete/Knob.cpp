@@ -7,6 +7,54 @@ namespace artboard
     {
         constexpr double kPi = 3.14159265358979323846;
         double knobSweepAngle(double v01) { return (135.0 + v01 * 270.0) * kPi / 180.0; }
+        double clamp01(double v) { return v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v); }
+        double clampPM1(double v) { return v < -1.0 ? -1.0 : (v > 1.0 ? 1.0 : v); }
+    }
+
+    double Knob::dialRadius() const
+    {
+        const double w = width.value();
+        const double avail = label.empty() ? height.value() : height.value() - 14.0;
+        return (w < avail ? w : avail) * 0.5 - 3.0;
+    }
+
+    int Knob::ringAtRadius(double rad) const
+    {
+        const double r = dialRadius();
+        for (size_t i = 0; i < mMods.size(); ++i)
+        {
+            const double rr = r + 4.0 + (double)i * 5.0;
+            if (rad >= rr - 2.5 && rad <= rr + 2.5)
+                return (int)i;
+        }
+        return -1;
+    }
+
+    void Knob::addModulation(int sourceId, const Color &color, double depth)
+    {
+        for (auto &m : mMods)
+            if (m.sourceId == sourceId) { m.color = color; return; } // already routed: recolour
+        mMods.push_back(KnobMod{sourceId, clampPM1(depth), color});
+    }
+
+    void Knob::setModDepth(int sourceId, double depth)
+    {
+        for (auto &m : mMods)
+            if (m.sourceId == sourceId) { m.depth = clampPM1(depth); return; }
+    }
+
+    double Knob::modulatedValue() const
+    {
+        double v = value();
+        if (mBus)
+        {
+            const double span = maximum() - minimum();
+            for (const auto &m : mMods)
+                v += m.depth * mBus->value(m.sourceId) * span;
+        }
+        if (v < minimum()) v = minimum();
+        if (v > maximum()) v = maximum();
+        return v;
     }
 
     Knob::Knob(const KnobStyle &style)
@@ -102,6 +150,30 @@ namespace artboard
         t.setStroke(mStyle.indicatorColor, mStyle.arcWidth);
         t.strokePath();
 
+        // modulation depth rings (Serum-style), one concentric ring per routing.
+        const double span = maximum() - minimum();
+        const double liveNorm = span > 0.0 ? clamp01((modulatedValue() - minimum()) / span) : 0.0;
+        for (size_t i = 0; i < mMods.size(); ++i)
+        {
+            const double rr = r + 4.0 + (double)i * 5.0;
+            const double reach = clamp01(norm + mMods[i].depth);
+            const double n0 = norm < reach ? norm : reach, n1 = norm < reach ? reach : norm;
+            // depth arc from the base value to its reach, in the source colour
+            t.beginPath();
+            const int steps = 16;
+            for (int s = 0; s <= steps; ++s)
+            {
+                const double a = knobSweepAngle(n0 + (n1 - n0) * s / steps);
+                const Point p{cx + std::cos(a) * rr, cy + std::sin(a) * rr};
+                if (s == 0) t.moveTo(p.x, p.y); else t.lineTo(p.x, p.y);
+            }
+            t.setStroke(mMods[i].color, 2.0);
+            t.strokePath();
+            // live dot at the current modulated value on this ring
+            const double la = knobSweepAngle(liveNorm);
+            drawCircle(t, cx + std::cos(la) * rr, cy + std::sin(la) * rr, 2.0, Paint::filled(mMods[i].color));
+        }
+
         if (!label.empty())
         {
             t.setFill(mStyle.label.color);
@@ -113,22 +185,41 @@ namespace artboard
     bool Knob::handleGesture(const Gesture &g, const Point &localPoint)
     {
         using T = Gesture::Type;
+        const double w = width.value();
+        const double avail = label.empty() ? height.value() : height.value() - 14.0;
+        const double dx = localPoint.x - w * 0.5, dy0 = localPoint.y - avail * 0.5;
+        const int ring = ringAtRadius(std::sqrt(dx * dx + dy0 * dy0));
+
+        if (g.type == T::Down)
+        {
+            mDragRing = ring; // -1 = dial (value drag), else a depth ring
+            if (focusable) requestFocus();
+            return true;
+        }
         if (g.type == T::DoubleClick)
         {
-            resetToDefault(); // snap back to the default value (display springs there)
-            emitChange();
+            if (ring >= 0 && ring < (int)mMods.size()) // double-click a ring removes that routing
+                mMods.erase(mMods.begin() + ring);
+            else { resetToDefault(); emitChange(); }
             return true;
         }
         if (g.type == T::DragStart)
         {
             mDragStartValue = value();
+            if (mDragRing >= 0 && mDragRing < (int)mMods.size())
+                mDragStartDepth = mMods[mDragRing].depth;
             return true;
         }
         if (g.type == T::Drag)
         {
             const double dy = g.start.y - g.pos.y; // drag up increases
-            setValue(mDragStartValue + dy / sensitivity * (maximum() - minimum()));
-            emitChange();
+            if (mDragRing >= 0 && mDragRing < (int)mMods.size())
+                setModDepth(mMods[mDragRing].sourceId, mDragStartDepth + dy / 120.0);
+            else
+            {
+                setValue(mDragStartValue + dy / sensitivity * (maximum() - minimum()));
+                emitChange();
+            }
             return true;
         }
         return Segment::handleGesture(g, localPoint);

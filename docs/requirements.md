@@ -207,6 +207,24 @@ border of every filled-and-stroked shape, making that platform diverge from the 
 forbidden. The result must be pixel-equivalent across web (Canvas2D), native (Cairo), and the
 `RecordingTarget` op stream.
 
+### FR-18 Knob modulation (depth rings + ModBus)
+
+A `Knob` shall support **modulation routings**: each routing names a source (an
+integer id), carries a signed **depth** in `[-1,1]` of the knob's full range, and a
+colour. Live source values are published on a `ModBus` (`set(id,value)` /
+`value(id)`), which the knob reads (`setModBus`) so a target depends only on the bus,
+not on any concrete source. The knob's **modulated value** = `base + Σ depthᵢ ·
+busValue(sourceᵢ) · range`, clamped to the range.
+
+Each routing renders as a concentric **outer ring** (Serum-style) in the source
+colour: an arc from the base value to its reach (`base+depth`) plus a live dot at the
+current modulated value. Interaction: a press whose radius falls on a ring drags that
+ring **vertically to set its depth**; a press on the dial drags the value as before; a
+double-click on a ring **removes** that routing (a double-click on the dial still
+resets to default, FR-9a). `addModulation(id,colour)` adds a routing (or re-colours an
+existing one for that source). Assignment of a source to a target (drag-and-drop) is
+performed by the application, which then calls `addModulation`.
+
 ## 4. Non-functional Requirements
 
 ### NFR-1 Platform independence
