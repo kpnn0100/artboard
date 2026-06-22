@@ -28,6 +28,10 @@ package render {
     +clipRect(x,y,w,h)
     +setRadialFill(cx,cy,r,inner,outer)
     +setLinearFill(x0,y0,x1,y1,start,end)
+    +registerImage(rgba,w,h) : int
+    +updateImage(id,rgba,w,h)
+    +drawImage(id,dst)
+    +releaseImage(id)
   }
   class RecordingTarget
   RecordingTarget ..|> IRenderTarget
@@ -90,6 +94,7 @@ package ui {
   class TabView
   class ScrollView
   class LineGraph
+  class ImageView
 
   Segment --|> Drawable
   Segment ..|> InputTarget
@@ -117,6 +122,8 @@ package ui {
   TabView --|> Segment
   ScrollView --|> Segment
   LineGraph --|> Segment
+  ImageView --|> Segment
+  ImageView ..> IRenderTarget
   Theme ..> Slider
   Theme ..> Button
   Theme ..> Checkbox

@@ -1,5 +1,6 @@
 #include "Canvas2DTarget.h"
 #include <emscripten.h>
+#include <cstdint>
 
 // Each primitive maps to one Canvas2D call on the active context (window.__abctx,
 // set by the page before rendering). Colors become CSS rgba() strings.
@@ -34,6 +35,35 @@ EM_JS(void, ab_stroke, (), { window.__abctx.stroke(); });
 EM_JS(void, ab_text, (const char *s, double x, double y, double size),
       { var c = window.__abctx; c.font = size + 'px sans-serif'; c.fillText(UTF8ToString(s), x, y); });
 
+// Raster images: each id is an offscreen <canvas> in window.__abimg.map. Canvas2D
+// ImageData is straight RGBA8, top-down — exactly the HAL format (no conversion).
+EM_JS(int, ab_registerImage, (uintptr_t ptr, int w, int h), {
+    if (!window.__abimg) window.__abimg = { next: 1, map: {} };
+    var id = window.__abimg.next++;
+    var cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    var ctx = cv.getContext('2d');
+    var img = ctx.createImageData(w, h);
+    img.data.set(HEAPU8.subarray(ptr, ptr + w * h * 4));
+    ctx.putImageData(img, 0, 0);
+    window.__abimg.map[id] = cv;
+    return id;
+});
+EM_JS(void, ab_updateImage, (int id, uintptr_t ptr, int w, int h), {
+    if (!window.__abimg || !window.__abimg.map[id]) return;
+    var cv = window.__abimg.map[id]; cv.width = w; cv.height = h;
+    var ctx = cv.getContext('2d');
+    var img = ctx.createImageData(w, h);
+    img.data.set(HEAPU8.subarray(ptr, ptr + w * h * 4));
+    ctx.putImageData(img, 0, 0);
+});
+EM_JS(void, ab_drawImage, (int id, double x, double y, double w, double h), {
+    if (!window.__abimg || !window.__abimg.map[id]) return;
+    window.__abctx.drawImage(window.__abimg.map[id], x, y, w, h);  // honors current transform
+});
+EM_JS(void, ab_releaseImage, (int id), {
+    if (window.__abimg && window.__abimg.map[id]) delete window.__abimg.map[id];
+});
+
 namespace artboard
 {
     void Canvas2DTarget::save() { ab_save(); }
@@ -59,4 +89,14 @@ namespace artboard
     void Canvas2DTarget::fillPath() { ab_fill(); }
     void Canvas2DTarget::strokePath() { ab_stroke(); }
     void Canvas2DTarget::drawText(const std::string &text, double x, double y, double sizePx) { ab_text(text.c_str(), x, y, sizePx); }
+    int Canvas2DTarget::registerImage(const uint8_t *rgba, int w, int h)
+    {
+        return ab_registerImage(reinterpret_cast<uintptr_t>(rgba), w, h);
+    }
+    void Canvas2DTarget::updateImage(int id, const uint8_t *rgba, int w, int h)
+    {
+        ab_updateImage(id, reinterpret_cast<uintptr_t>(rgba), w, h);
+    }
+    void Canvas2DTarget::drawImage(int id, const Rect &dst) { ab_drawImage(id, dst.x, dst.y, dst.w, dst.h); }
+    void Canvas2DTarget::releaseImage(int id) { ab_releaseImage(id); }
 }

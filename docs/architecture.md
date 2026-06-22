@@ -99,6 +99,16 @@ forcing all controls into one monolithic manager class.
   paint (filled body + border). An adapter that clears the path inside `fillPath`/`strokePath`
   (e.g. a stray `cairo_new_path`) silently drops every border and diverges from the others, so it
   is a bug — the path is only reset by the next `beginPath`/`clipRect`.
+- It exposes a **raster image** primitive (`registerImage`/`updateImage`/`drawImage`/`releaseImage`)
+  for drawing a photograph or pixel buffer — impossible to express with fill/stroke/path/text. It is
+  a **handle/registration** model rather than an immediate `drawImage(pixels,...)`: a photo editor
+  redraws at frame rate while the pixels change only on an edit, so uploading once (register) and
+  re-uploading only on change (update) avoids re-sending megabytes every frame. This is the
+  platform-independence trade-off rule in action — the cost (one offscreen canvas / Cairo surface per
+  handle, and the RGBA8→native conversion) lives on the adapter side while the visible result is
+  identical everywhere. Pixel format is fixed straight RGBA8 top-down; Canvas2D's `ImageData` matches
+  it directly, Cairo converts to premultiplied BGRA honoring its stride, and `RecordingTarget` records
+  id/dimensions/draw-rect (+ a pixel hash to prove an update changed the bytes).
 - `RecordingTarget` records draw operations for tests and inspection.
 
 ### 3.4 `input`
@@ -133,7 +143,8 @@ The `ui` module is split by role into two folders, **one class per file** for ma
 - **`ui/concrete/`** — the finished, themed controls, each its own file:
   - baseline: `Button`, `Slider`, `Checkbox`, `TextBox`,
   - extended: `Knob`, `ToggleSwitch`, `ProgressBar`, `ComboBox`, `TabView`, `ScrollView`,
-    `LineGraph`.
+    `LineGraph`, `ImageView` (aspect-fits a registered raster image into its bounds; the only
+    core consumer of the HAL raster primitive).
 
 Concrete controls reuse `Segment` composition, the shared `drawRoundedRect`/`drawCircle` helpers
 (in `scene`), and `AbstractSlider` where a ranged value applies (`Slider`, `Knob`). The aggregate

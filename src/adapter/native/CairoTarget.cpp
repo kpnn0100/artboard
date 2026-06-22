@@ -113,4 +113,88 @@ namespace artboard
         cairo_move_to(mContext, x, y);
         cairo_show_text(mContext, text.c_str());
     }
+
+    CairoTarget::~CairoTarget()
+    {
+        for (auto &kv : mImages)
+            if (kv.second.surface)
+                cairo_surface_destroy(kv.second.surface);
+    }
+
+    // Convert HAL RGBA8-straight -> Cairo ARGB32, which on little-endian is BGRA in
+    // memory and is premultiplied. Honors Cairo's required stride (may exceed w*4).
+    void CairoTarget::buildEntry(ImageEntry &e, const uint8_t *rgba, int w, int h)
+    {
+        if (e.surface)
+        {
+            cairo_surface_destroy(e.surface);
+            e.surface = nullptr;
+        }
+        const int stride = cairo_format_stride_for_width(CAIRO_FORMAT_ARGB32, w);
+        e.w = w; e.h = h;
+        e.data.assign((size_t)stride * h, 0);
+        for (int y = 0; y < h; ++y)
+        {
+            const uint8_t *srow = rgba + (size_t)y * w * 4;
+            uint8_t *drow = e.data.data() + (size_t)y * stride;
+            for (int x = 0; x < w; ++x)
+            {
+                const uint8_t r = srow[x * 4 + 0];
+                const uint8_t g = srow[x * 4 + 1];
+                const uint8_t b = srow[x * 4 + 2];
+                const uint8_t a = srow[x * 4 + 3];
+                drow[x * 4 + 0] = (uint8_t)((b * a + 127) / 255);  // B
+                drow[x * 4 + 1] = (uint8_t)((g * a + 127) / 255);  // G
+                drow[x * 4 + 2] = (uint8_t)((r * a + 127) / 255);  // R
+                drow[x * 4 + 3] = a;                                // A
+            }
+        }
+        e.surface = cairo_image_surface_create_for_data(
+            e.data.data(), CAIRO_FORMAT_ARGB32, w, h, stride);
+        cairo_surface_mark_dirty(e.surface);
+    }
+
+    int CairoTarget::registerImage(const uint8_t *rgba, int w, int h)
+    {
+        if (!rgba || w <= 0 || h <= 0)
+            return 0;
+        const int id = mNextImageId++;
+        buildEntry(mImages[id], rgba, w, h);
+        return id;
+    }
+
+    void CairoTarget::updateImage(int id, const uint8_t *rgba, int w, int h)
+    {
+        if (!rgba || w <= 0 || h <= 0)
+            return;
+        auto it = mImages.find(id);
+        if (it == mImages.end())
+            return;
+        buildEntry(it->second, rgba, w, h);
+    }
+
+    void CairoTarget::drawImage(int id, const Rect &dst)
+    {
+        auto it = mImages.find(id);
+        if (it == mImages.end() || !it->second.surface || it->second.w <= 0 || it->second.h <= 0)
+            return;
+        const ImageEntry &e = it->second;
+        cairo_save(mContext);
+        cairo_translate(mContext, dst.x, dst.y);
+        cairo_scale(mContext, dst.w / e.w, dst.h / e.h);
+        cairo_set_source_surface(mContext, e.surface, 0, 0);
+        cairo_pattern_set_filter(cairo_get_source(mContext), CAIRO_FILTER_GOOD);
+        cairo_paint(mContext);
+        cairo_restore(mContext);
+    }
+
+    void CairoTarget::releaseImage(int id)
+    {
+        auto it = mImages.find(id);
+        if (it == mImages.end())
+            return;
+        if (it->second.surface)
+            cairo_surface_destroy(it->second.surface);
+        mImages.erase(it);
+    }
 }

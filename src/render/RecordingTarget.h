@@ -6,6 +6,7 @@
 #pragma once
 #include "RenderTarget.h"
 #include <vector>
+#include <cstdint>
 
 namespace artboard
 {
@@ -15,15 +16,20 @@ namespace artboard
         {
             Save, Restore, SetTransform, ClipRect, SetFill, SetRadialFill, SetLinearFill, SetStroke,
             BeginPath, MoveTo, LineTo, QuadTo, CubicTo, ClosePath,
-            FillPath, StrokePath, DrawText
+            FillPath, StrokePath, DrawText,
+            RegisterImage, UpdateImage, DrawImage, ReleaseImage
         };
         Kind kind;
-        double args[6] = {0, 0, 0, 0, 0, 0};
+        double args[6] = {0, 0, 0, 0, 0, 0};  // DrawImage uses args[0..3] = dst x,y,w,h
         Color color;       // SetFill / SetStroke colour, or gradient start/inner colour
         Color color2;      // gradient end/outer colour
         double width = 0;
         Transform transform;
         std::string text;
+        // raster image ops
+        int imageId = 0;            // assigned id (register) or target id (update/draw/release)
+        int imgW = 0, imgH = 0;     // register/update dimensions
+        uint64_t pixelHash = 0;     // register/update byte sum (prove pixels changed; not stored verbatim)
     };
 
     class RecordingTarget : public IRenderTarget
@@ -46,12 +52,18 @@ namespace artboard
         void fillPath() override;
         void strokePath() override;
         void drawText(const std::string &text, double x, double y, double sizePx) override;
+        int registerImage(const uint8_t *rgba, int w, int h) override;
+        void updateImage(int id, const uint8_t *rgba, int w, int h) override;
+        void drawImage(int id, const Rect &dst) override;
+        void releaseImage(int id) override;
 
         const std::vector<DrawOp> &ops() const { return mOps; }
         void clear() { mOps.clear(); }
         int count(DrawOp::Kind k) const;
 
     private:
+        static uint64_t hashPixels(const uint8_t *rgba, int w, int h);
         std::vector<DrawOp> mOps;
+        int mNextImageId = 1;
     };
 }

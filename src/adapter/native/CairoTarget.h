@@ -1,6 +1,9 @@
 #pragma once
 #include "../../render/RenderTarget.h"
 #include <cairo/cairo.h>
+#include <cstdint>
+#include <unordered_map>
+#include <vector>
 
 namespace artboard
 {
@@ -9,6 +12,7 @@ namespace artboard
     public:
         CairoTarget() = default;
         explicit CairoTarget(cairo_t *context) : mContext(context) {}
+        ~CairoTarget() override;
 
         void setContext(cairo_t *context) { mContext = context; }
         cairo_t *context() const { return mContext; }
@@ -30,8 +34,25 @@ namespace artboard
         void fillPath() override;
         void strokePath() override;
         void drawText(const std::string &text, double x, double y, double sizePx) override;
+        int registerImage(const uint8_t *rgba, int w, int h) override;
+        void updateImage(int id, const uint8_t *rgba, int w, int h) override;
+        void drawImage(int id, const Rect &dst) override;
+        void releaseImage(int id) override;
 
     private:
+        // A registered image: a Cairo ARGB32 surface backed by an owned byte buffer.
+        // cairo_image_surface_create_for_data does NOT copy, so the buffer must
+        // outlive the surface — both live here.
+        struct ImageEntry
+        {
+            cairo_surface_t *surface = nullptr;
+            std::vector<uint8_t> data;  // BGRA8 premultiplied, Cairo stride
+            int w = 0, h = 0;
+        };
+        void buildEntry(ImageEntry &e, const uint8_t *rgba, int w, int h);
+
         cairo_t *mContext = nullptr;
+        std::unordered_map<int, ImageEntry> mImages;
+        int mNextImageId = 1;
     };
 }

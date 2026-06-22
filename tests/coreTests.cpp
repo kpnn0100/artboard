@@ -1401,4 +1401,129 @@ TEST(Row_and_Column_layout)
     CHECK_NEAR(empty->height.value(), 6.0, 1e-9);
 }
 
+// ───────────────────────── render/raster primitive ─────────────────────────
+TEST(RecordingTarget_registerImage_records)
+{
+    RecordingTarget t;
+    uint8_t px[2 * 2 * 4];
+    for (int i = 0; i < (int)sizeof(px); ++i) px[i] = (uint8_t)i;
+    int id = t.registerImage(px, 2, 2);
+    CHECK(id > 0);
+    CHECK(t.count(K::RegisterImage) == 1);
+    const DrawOp *op = nullptr;
+    for (const auto &o : t.ops()) if (o.kind == K::RegisterImage) op = &o;
+    CHECK(op && op->imageId == id && op->imgW == 2 && op->imgH == 2);
+    CHECK(op->pixelHash != 0);
+    // a second register hands out a distinct id
+    int id2 = t.registerImage(px, 2, 2);
+    CHECK(id2 != id);
+}
+
+TEST(RecordingTarget_update_and_draw_records)
+{
+    RecordingTarget t;
+    uint8_t a[2 * 2 * 4]; for (int i = 0; i < (int)sizeof(a); ++i) a[i] = 10;
+    uint8_t b[2 * 2 * 4]; for (int i = 0; i < (int)sizeof(b); ++i) b[i] = 20;
+    int id = t.registerImage(a, 2, 2);
+    t.updateImage(id, b, 2, 2);
+    t.drawImage(id, Rect{10, 20, 100, 80});
+
+    CHECK(t.count(K::UpdateImage) == 1 && t.count(K::DrawImage) == 1);
+    const DrawOp *upd = nullptr, *drw = nullptr, *reg = nullptr;
+    for (const auto &o : t.ops())
+    {
+        if (o.kind == K::RegisterImage) reg = &o;
+        if (o.kind == K::UpdateImage) upd = &o;
+        if (o.kind == K::DrawImage) drw = &o;
+    }
+    CHECK(upd && upd->imageId == id);
+    CHECK(reg && upd->pixelHash != reg->pixelHash);  // different pixels recorded
+    CHECK(drw && drw->imageId == id);
+    CHECK_NEAR(drw->args[0], 10, 1e-9);
+    CHECK_NEAR(drw->args[1], 20, 1e-9);
+    CHECK_NEAR(drw->args[2], 100, 1e-9);
+    CHECK_NEAR(drw->args[3], 80, 1e-9);
+}
+
+TEST(RecordingTarget_releaseImage_records)
+{
+    RecordingTarget t;
+    uint8_t px[4] = {1, 2, 3, 4};
+    int id = t.registerImage(px, 1, 1);
+    t.releaseImage(id);
+    CHECK(t.count(K::ReleaseImage) == 1);
+    for (const auto &o : t.ops()) if (o.kind == K::ReleaseImage) CHECK(o.imageId == id);
+    // empty/zero-size register still returns an id but hashes to 0
+    int z = t.registerImage(nullptr, 0, 0);
+    CHECK(z > 0);
+}
+
+TEST(ImageView_fits_and_emits_drawImage)
+{
+    RecordingTarget t;
+    ImageView v;
+    v.width.set(100); v.height.set(100);
+    std::vector<uint8_t> px((size_t)4 * 2 * 4, 200);  // 4x2 image
+    v.setImage(px.data(), 4, 2);
+    CHECK(v.hasImage() && v.imageWidth() == 4 && v.imageHeight() == 2);
+
+    // contain: scale = min(100/4, 100/2) = 25 -> 100x50 centered at y=25
+    Rect fit = v.fittedRect();
+    CHECK_NEAR(fit.x, 0, 1e-9);
+    CHECK_NEAR(fit.y, 25, 1e-9);
+    CHECK_NEAR(fit.w, 100, 1e-9);
+    CHECK_NEAR(fit.h, 50, 1e-9);
+
+    v.render(t);
+    CHECK(t.count(K::RegisterImage) == 1 && t.count(K::DrawImage) == 1);
+    const DrawOp *drw = nullptr;
+    for (const auto &o : t.ops()) if (o.kind == K::DrawImage) drw = &o;
+    CHECK(drw && drw->imageId > 0);
+    CHECK_NEAR(drw->args[1], 25, 1e-9);
+    CHECK_NEAR(drw->args[3], 50, 1e-9);
+}
+
+TEST(ImageView_reupload_on_change_and_fits)
+{
+    RecordingTarget t;
+    ImageView v;
+    v.width.set(40); v.height.set(40);
+    std::vector<uint8_t> px((size_t)2 * 2 * 4, 100);
+    v.setImage(px.data(), 2, 2);
+    v.render(t);  // registers
+    v.setImage(px.data(), 2, 2);  // same dims, new pixels -> dirty
+    v.render(t);  // should UPDATE, not register again
+    CHECK(t.count(K::RegisterImage) == 1);
+    CHECK(t.count(K::UpdateImage) == 1);
+    CHECK(t.count(K::DrawImage) == 2);
+
+    // Cover fit: scale = max(40/2,40/2)=20 -> 40x40 (square here)
+    v.setFit(ImageView::Fit::Cover);
+    Rect cover = v.fittedRect();
+    CHECK_NEAR(cover.w, 40, 1e-9);
+    // Fill fit: exactly the bounds
+    v.setFit(ImageView::Fit::Fill);
+    Rect fill = v.fittedRect();
+    CHECK_NEAR(fill.w, 40, 1e-9);
+    CHECK_NEAR(fill.h, 40, 1e-9);
+}
+
+TEST(ImageView_empty_and_clear)
+{
+    RecordingTarget t;
+    ImageView v;
+    v.width.set(50); v.height.set(50);
+    v.render(t);  // no image -> nothing
+    CHECK(t.count(K::DrawImage) == 0);
+    CHECK_NEAR(v.fittedRect().w, 0, 1e-9);
+
+    std::vector<uint8_t> px((size_t)1 * 1 * 4, 255);
+    v.setImage(px.data(), 1, 1);
+    CHECK(v.hasImage());
+    v.clearImage();
+    CHECK(!v.hasImage());
+    v.setImage(nullptr, 0, 0);  // invalid clears too
+    CHECK(!v.hasImage());
+}
+
 int main() { return mini::runAll(); }

@@ -302,6 +302,33 @@ types without creating a deep inheritance chain.
   banding. Linear is the second canonical gradient (depth/shading ramps); it reuses
   `DrawOp::color2`.
 
+## 11c. Raster image primitive
+
+### HAL
+
+- `IRenderTarget::registerImage(rgba, w, h) -> int` uploads pixels (straight RGBA8, top-down,
+  stride `w*4`, sRGB) and returns a positive handle (0 = failure). `updateImage(id, rgba, w, h)`
+  replaces a handle's pixels/dimensions. `drawImage(id, dst)` blits the handle into the `Rect`
+  `dst` in the current transform space. `releaseImage(id)` frees it.
+- Rationale (handle model, not immediate-mode): a photo editor redraws at frame rate while the
+  pixels change only on an edit. Re-uploading megabytes per frame would be wasteful, so pixels are
+  uploaded once and re-sent only on `updateImage`. Per the platform trade-off rule the cost lives
+  on the adapter (one surface/canvas per handle + the RGBA8→native conversion); the visible result
+  is identical everywhere.
+- `RecordingTarget` records `DrawOp::Kind::{RegisterImage,UpdateImage,DrawImage,ReleaseImage}`:
+  register/update store `imageId`, `imgW`, `imgH`, and a position-weighted `pixelHash` (so a test
+  can prove an update changed the bytes without storing them); draw stores `imageId` and the dst
+  rect in `args[0..3]`; an internal `mNextImageId` assigns handles.
+- `Canvas2DTarget` keeps a JS registry (`window.__abimg.map[id]`) of offscreen `<canvas>` elements;
+  `ImageData` is straight RGBA8 top-down so the bytes copy in directly (`HEAPU8.subarray` →
+  `putImageData`); `drawImage` calls `ctx.drawImage(canvas, x,y,w,h)`, honoring the current transform.
+- `CairoTarget` keeps an `unordered_map<int, ImageEntry>` of ARGB32 surfaces. It converts straight
+  RGBA8 → **premultiplied BGRA** (little-endian ARGB32 byte order) honoring
+  `cairo_format_stride_for_width`, and keeps the owning byte buffer alive alongside the surface
+  (`cairo_image_surface_create_for_data` does not copy). `drawImage` does
+  `save → translate(dst) → scale(dst/size) → set_source_surface → paint → restore`. The destructor
+  destroys all surfaces.
+
 ### Segment wiring
 
 - `Segment::render` is unchanged for non-clipping segments (same op stream). When
@@ -375,6 +402,18 @@ inline helper in `base/InputController.h`.
   grid lines, an optional filled area, and the series polyline mapped into the bounds. Empty or
   single-point series draw only the frame.
 
+### 12.8 `ImageView`
+
+- Displays a raster photo aspect-fitted into its bounds (the only core consumer of the §11c HAL
+  primitive). `setImage(rgba, w, h)` copies the pixels (so it can re-register if drawn into a
+  different target — a `RecordingTarget` in tests, then Cairo/Canvas2D at runtime); `clearImage()`
+  drops them. `setFit(Contain|Cover|Fill)`; `fittedRect()` returns the destination rect in local
+  space so overlays (e.g. a crop tool) can align to the displayed image.
+- `onPaint` (lazy, target-aware): if the target changed or there is no handle yet, `registerImage`
+  and cache the handle + target; else if the pixels are dirty, `updateImage`; then `drawImage`
+  into `fittedRect()`. It never calls `releaseImage` (the adapter reclaims handles on teardown).
+  `hitTestSelf` returns false — display-only; interactive overlays are separate segments.
+
 ## 13. Traceability to Requirements
 
 - FR-3 and FR-10 map to `Segment`.
@@ -395,5 +434,9 @@ inline helper in `base/InputController.h`.
   `LinearLayout::advance`.
 - FR-18 maps to `KnobMod` + `Knob::addModulation/setModDepth/modulatedValue` and the `ModBus`
   (`ui/base/ModBus.h`); the depth rings render and drag in `Knob::onPaint`/`handleGesture`.
+- FR-19 maps to `IRenderTarget::{registerImage,updateImage,drawImage,releaseImage}`,
+  `RecordingTarget` (`DrawOp::Kind::{RegisterImage,UpdateImage,DrawImage,ReleaseImage}` +
+  `imageId`/`imgW`/`imgH`/`pixelHash`), the Canvas2D / Cairo adapters, and `ImageView`
+  (`ui/concrete/ImageView`).
 - FR-12 maps to `Knob`, `ToggleSwitch`, `ProgressBar`, `ComboBox`, `TabView`, `ScrollView`, and
   `LineGraph`, one class per file under `ui/concrete/`.

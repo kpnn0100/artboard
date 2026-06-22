@@ -9,6 +9,7 @@
 #include "../core/Geometry.h"
 #include "../core/Color.h"
 #include <string>
+#include <cstdint>
 
 namespace artboard
 {
@@ -54,5 +55,20 @@ namespace artboard
 
         // ---- text (cannot be a path without a font; stays a primitive) ----
         virtual void drawText(const std::string &text, double x, double y, double sizePx) = 0;
+
+        // ---- raster images (handle/registration model) ----
+        // A raster image is a primitive: no path/fill/text combination reproduces a
+        // photograph's per-pixel colour. The handle model uploads the pixels ONCE
+        // (registerImage) and re-uploads only on change (updateImage), so a large
+        // photo is not re-sent every frame; drawImage is then a cheap blit into the
+        // destination rect (current transform space).
+        //
+        // Pixel format for register/update is fixed: tightly-packed RGBA8, 4 bytes
+        // per pixel, row-major top-to-bottom, stride = w*4, STRAIGHT (non-pre-
+        // multiplied) alpha, sRGB. Each adapter converts to its native expectation.
+        virtual int  registerImage(const uint8_t *rgba, int w, int h) = 0; // -> id>0 (0 = failed)
+        virtual void updateImage(int id, const uint8_t *rgba, int w, int h) = 0;
+        virtual void drawImage(int id, const Rect &dst) = 0;               // no-op if id unknown
+        virtual void releaseImage(int id) = 0;
     };
 }

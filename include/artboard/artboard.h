@@ -42,3 +42,4 @@
 #include "../../src/ui/concrete/TabView.h"
 #include "../../src/ui/concrete/ScrollView.h"
 #include "../../src/ui/concrete/LineGraph.h"
+#include "../../src/ui/concrete/ImageView.h"

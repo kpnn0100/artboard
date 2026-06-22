@@ -84,6 +84,49 @@ namespace artboard
         mOps.push_back(op);
     }
 
+    uint64_t RecordingTarget::hashPixels(const uint8_t *rgba, int w, int h)
+    {
+        if (!rgba || w <= 0 || h <= 0)
+            return 0;
+        uint64_t sum = 0;
+        const size_t n = (size_t)w * h * 4;
+        for (size_t i = 0; i < n; ++i)
+            sum += (uint64_t)(i + 1) * rgba[i];  // position-weighted so order matters
+        return sum;
+    }
+
+    int RecordingTarget::registerImage(const uint8_t *rgba, int w, int h)
+    {
+        const int id = mNextImageId++;
+        DrawOp op{K::RegisterImage};
+        op.imageId = id;
+        op.imgW = w; op.imgH = h;
+        op.pixelHash = hashPixels(rgba, w, h);
+        mOps.push_back(op);
+        return id;
+    }
+    void RecordingTarget::updateImage(int id, const uint8_t *rgba, int w, int h)
+    {
+        DrawOp op{K::UpdateImage};
+        op.imageId = id;
+        op.imgW = w; op.imgH = h;
+        op.pixelHash = hashPixels(rgba, w, h);
+        mOps.push_back(op);
+    }
+    void RecordingTarget::drawImage(int id, const Rect &dst)
+    {
+        DrawOp op{K::DrawImage};
+        op.imageId = id;
+        op.args[0] = dst.x; op.args[1] = dst.y; op.args[2] = dst.w; op.args[3] = dst.h;
+        mOps.push_back(op);
+    }
+    void RecordingTarget::releaseImage(int id)
+    {
+        DrawOp op{K::ReleaseImage};
+        op.imageId = id;
+        mOps.push_back(op);
+    }
+
     int RecordingTarget::count(DrawOp::Kind k) const
     {
         int n = 0;

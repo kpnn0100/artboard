@@ -11,7 +11,7 @@ This document is now the entry point to the V-model documentation set for Artboa
   the render HAL `clipRect` primitive, the baseline controls, and the extended widgets. The `ui`
   module is one class per file, split into `ui/base/` (foundations + reusable nodes +
   `AbstractSlider`) and `ui/concrete/` (`Button`, `Slider`, `Checkbox`, `TextBox`, `Knob`,
-  `ToggleSwitch`, `ProgressBar`, `ComboBox`, `TabView`, `ScrollView`, `LineGraph`).
+  `ToggleSwitch`, `ProgressBar`, `ComboBox`, `TabView`, `ScrollView`, `LineGraph`, `ImageView`).
 - [architecture.puml](architecture.puml) provides a renderable PlantUML package and class view.
 
 ## Scope
@@ -24,5 +24,5 @@ Artboard now has two complementary authoring models:
   keyboard/pointer behavior.
 
 The two models share the same geometry, animation, render HAL (now including a `clipRect`
-primitive and a `setRadialFill` two-stop radial-gradient paint for true soft glows), and input
-HAL.
+primitive, `setRadialFill`/`setLinearFill` two-stop gradient paints, and a register-once raster
+image primitive backing `ImageView` for photographic content), and input HAL.

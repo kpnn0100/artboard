@@ -226,6 +226,38 @@ resets to default, FR-9a). `addModulation(id,colour)` adds a routing (or re-colo
 existing one for that source). Assignment of a source to a target (drag-and-drop) is
 performed by the application, which then calls `addModulation`.
 
+### FR-19 Raster image primitive (register / draw) + ImageView
+
+The render HAL shall provide a **raster image** primitive so a photograph (or any
+pixel buffer) can be drawn — something no fill/stroke/path/text combination can
+reproduce. It uses a **handle/registration** model so a large image is uploaded once,
+not re-sent every frame:
+
+- `registerImage(rgba, w, h) -> id` uploads pixels and returns a positive handle
+  (0 = failure). Pixel format is fixed: tightly-packed **RGBA8**, 4 bytes/pixel,
+  row-major top-to-bottom, stride `w*4`, **straight (non-premultiplied)** alpha, sRGB.
+- `updateImage(id, rgba, w, h)` replaces a handle's pixels (and dimensions) — used when
+  an edited preview changes; it does **not** allocate a new handle.
+- `drawImage(id, dst)` blits the handle into the destination `Rect` in the current
+  transform space (no-op if the id is unknown).
+- `releaseImage(id)` frees a handle.
+
+The handle model is chosen deliberately: a photo editor redraws at frame rate but the
+pixels change only on an edit, so per-frame re-upload would be wasteful. Per the
+platform-independence trade-off rule the cost lives on the adapter side (one surface /
+offscreen canvas per handle) while the visible result is identical everywhere. Adapters:
+Canvas2D keeps an offscreen `<canvas>` per id (`ImageData` is straight RGBA8 top-down —
+no conversion); Cairo keeps an ARGB32 surface per id, converting straight RGBA8 to
+**premultiplied BGRA** honoring Cairo's stride; the `RecordingTarget` records the call
+(id, dimensions, a position-weighted pixel hash, and the draw rect) for tests.
+
+The framework shall also provide an **`ImageView`** segment that owns a copy of an
+image's pixels, registers it lazily (re-registering if drawn into a different target),
+re-uploads only when the pixels change, and draws it **aspect-fitted** into its bounds
+(`Contain` / `Cover` / `Fill`), exposing the fitted rect (`fittedRect()`) so overlays
+can align to the displayed image. `ImageView` is platform-free (emits only the HAL
+primitives above).
+
 ## 4. Non-functional Requirements
 
 ### NFR-1 Platform independence
