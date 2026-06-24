@@ -28,6 +28,7 @@ namespace artboard
         double mDragThreshold = 5.0;
         double mDoubleClickMs = 300.0;
 
+        bool mAlt = false;  // modifier state of the event currently being processed
         bool mPressed = false;
         bool mDragging = false;
         Point mDownPos;

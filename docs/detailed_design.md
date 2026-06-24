@@ -213,6 +213,10 @@ types without creating a deep inheritance chain.
 - Each of these (and the double-click reset) fires `onChange(value())` with the resulting
   value; a programmatic `setValue()` does **not** fire `onChange` (so syncing controls to
   state doesn't recurse) — same contract as `Knob`.
+- `setClickJumps(bool)` (default true): when false, only `Drag`/`DragStart` set the value; a
+  `Down`/`Click` is captured (returns true so the following drag is delivered) but does not
+  jump the value to the cursor. This keeps a double-click from being preceded by a value-
+  changing click, so `DoubleClick` reliably resets to default (FR-6/FR-9a).
 
 ### Rendering sequence
 
@@ -390,7 +394,10 @@ inline helper in `base/InputController.h`.
 
 - `addPage(title, segment)` appends a page; `selectedIndex` chooses the visible page (others have
   `visible=false`). Tab headers are child hit regions; `Click` on a header selects it and fires
-  `onChange(index)`. The active page is positioned under the tab strip.
+  `onChange(index)`. The active page is positioned directly under the tab strip (`y = tabHeight`,
+  no gap). **Unification (FR-21):** `onPaint` draws inactive tabs recessed (started a few px down,
+  shorter) and the active tab full-height extending `tabHeight+10` downward, drawn last; the page
+  (rendered after `onPaint`) covers the overhang, so the active tab merges into the content.
 
 ### 12.6 `ScrollView`
 

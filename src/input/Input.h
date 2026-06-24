@@ -19,6 +19,7 @@ namespace artboard
         Point pos;
         PointerButton button = PointerButton::Left;
         double timeMs = 0.0;
+        bool alt = false;  // Alt/Option modifier held (for alt-drag affordances)
     };
 
     struct Gesture
@@ -28,5 +29,6 @@ namespace artboard
         Point pos;                              // current position
         Point start;                            // press origin (for drags)
         PointerButton button = PointerButton::Left;
+        bool alt = false;                       // Alt/Option modifier held at the event
     };
 }

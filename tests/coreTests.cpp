@@ -684,6 +684,22 @@ TEST(Gesture_double_click_then_reset)
     CHECK(countG(g, GT::Click) == 2);
 }
 
+TEST(Gesture_alt_modifier_passthrough)
+{
+    auto g = recordGestures([](GestureRecognizer &r) {
+        r.feed({RawPointer::Kind::Down, {5, 5}, PB::Left, 100, true});   // Alt held
+        r.feed({RawPointer::Kind::Up,   {5, 5}, PB::Left, 120, false});  // Alt released
+    });
+    bool downAlt = false, clickAlt = true;
+    for (const auto &e : g)
+    {
+        if (e.type == GT::Down) downAlt = e.alt;
+        if (e.type == GT::Click) clickAlt = e.alt;
+    }
+    CHECK(downAlt == true);    // modifier carried onto the Down gesture
+    CHECK(clickAlt == false);  // and reflects the releasing event's state
+}
+
 TEST(Gesture_not_double_when_far_or_late)
 {
     auto far = recordGestures([](GestureRecognizer &r) {
@@ -1275,6 +1291,30 @@ TEST(Slider_onChange_fires_on_interaction)
     const int before = calls;
     sl->setValue(0.9);                             // programmatic -> no callback
     CHECK(calls == before);
+}
+
+TEST(Slider_clickJumps_off)
+{
+    auto sl = std::make_shared<Slider>();  // width 160, range 0..1
+    sl->setClickJumps(false);
+    sl->setValue(0.4);
+    sl->setDefault(0.2);
+    double last = -1.0; int calls = 0;
+    sl->onChange = [&](double v) { last = v; ++calls; };
+
+    // a bare press does NOT change the value (no click-to-position)
+    sl->onGesture({Gesture::Type::Down, {120, 14}, {120, 14}, PointerButton::Left});
+    CHECK_NEAR(sl->value(), 0.4, 1e-9);
+    CHECK(calls == 0);
+    // dragging DOES change it
+    sl->onGesture({Gesture::Type::DragStart, {80, 14}, {80, 14}, PointerButton::Left});
+    CHECK_NEAR(sl->value(), 0.5, 1e-9);
+    sl->onGesture({Gesture::Type::Drag, {40, 14}, {40, 14}, PointerButton::Left});
+    CHECK_NEAR(sl->value(), 0.25, 1e-9);
+    CHECK_NEAR(last, 0.25, 1e-9);
+    // double-click reliably resets to the default
+    sl->onGesture({Gesture::Type::DoubleClick, {150, 14}, {150, 14}, PointerButton::Left});
+    CHECK_NEAR(sl->value(), 0.2, 1e-9);
 }
 
 TEST(AbstractSlider_clamp_reversed_range)

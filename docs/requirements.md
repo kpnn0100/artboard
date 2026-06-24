@@ -94,7 +94,9 @@ The framework shall provide baseline implementations for:
 - `Button`
 - `Slider` — a horizontal ranged control; drag/click/arrow-keys set the value and emit
   `onChange(value)` (only on user interaction, never on a programmatic `setValue`), matching
-  `Knob`. Double-click resets to default (FR-9a).
+  `Knob`. Double-click resets to default (FR-9a). `setClickJumps(false)` makes the value change
+  **only on drag** (a bare press/click no longer jumps to the cursor), so a double-click reliably
+  resets without a click first hijacking the value; the default is `true` (press jumps).
 - `Checkbox`
 - `TextBox`
 
@@ -259,6 +261,21 @@ re-uploads only when the pixels change, and draws it **aspect-fitted** into its 
 (`Contain` / `Cover` / `Fill`), exposing the fitted rect (`fittedRect()`) so overlays
 can align to the displayed image. `ImageView` is platform-free (emits only the HAL
 primitives above).
+
+### FR-20 Pointer modifier (Alt)
+
+`RawPointer` and the synthesized `Gesture` carry a boolean **`alt`** flag (Alt/Option held).
+The adapter sets it on each raw event; the `GestureRecognizer` carries the current event's
+state onto every emitted gesture. This lets controls offer alt-drag affordances (e.g. pulling
+out bezier tangent handles on a curve point) without a separate keyboard channel. Other
+modifiers can be added the same way when needed.
+
+### FR-21 Tab/content unification
+
+`TabView` shall render the **active** tab as visually continuous with the page below it: the
+active tab is full height and extends past the tab strip (the page, drawn on top, covers the
+overhang), while inactive tabs are recessed (shorter, inset). The page sits directly under the
+strip (no gap). The result reads as one connected surface for the selected section.
 
 ## 4. Non-functional Requirements
 

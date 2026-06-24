@@ -85,6 +85,7 @@ package ui {
   class ModBus
   class Slider {
     + onChange : (value)
+    + setClickJumps(bool)
   }
   class Button
   class Checkbox

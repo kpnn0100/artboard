@@ -31,13 +31,20 @@ namespace artboard
                 onChange(value());
             return true;
         }
-        if (g.type == Gesture::Type::Down || g.type == Gesture::Type::Drag || g.type == Gesture::Type::Click)
+        // Drag always sets the value; a bare press/click only jumps to the cursor
+        // when click-jumps is enabled (off = the value only moves by dragging, so a
+        // double-click never gets hijacked into a value change).
+        const bool isDrag = g.type == Gesture::Type::Drag || g.type == Gesture::Type::DragStart;
+        const bool isPress = g.type == Gesture::Type::Down || g.type == Gesture::Type::Click;
+        if (isDrag || (isPress && mClickJumps))
         {
             setValue(valueForLocalX(localPoint.x));
             if (onChange)
                 onChange(value());
             return true;
         }
+        if (isPress)
+            return true;  // capture the press so the following drag is delivered here
         return Segment::handleGesture(g, localPoint);
     }
 

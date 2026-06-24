@@ -11,12 +11,17 @@ namespace artboard
     void GestureRecognizer::emit(Gesture::Type t, const Point &pos, const Point &start, PointerButton b)
     {
         if (mSink)
-            mSink(Gesture{t, pos, start, b});
+        {
+            Gesture g{t, pos, start, b};
+            g.alt = mAlt;  // carry the current event's modifier state onto the gesture
+            mSink(g);
+        }
     }
 
     void GestureRecognizer::feed(const RawPointer &e)
     {
         using K = RawPointer::Kind;
+        mAlt = e.alt;
         switch (e.kind)
         {
         case K::Down:

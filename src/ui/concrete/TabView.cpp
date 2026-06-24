@@ -30,7 +30,7 @@ namespace artboard
         for (int i = 0; i < (int)mPages.size(); ++i)
         {
             mPages[i]->x.set(0.0);
-            mPages[i]->y.set(tabHeight + 6.0);
+            mPages[i]->y.set(tabHeight);  // touches the tab strip (no gap) so the active tab unites with it
             mPages[i]->visible = (i == mSelected);
         }
     }
@@ -47,13 +47,23 @@ namespace artboard
         if (n == 0)
             return;
         const double tw = width.value() / n;
-        for (int i = 0; i < n; ++i)
-        {
-            const BoxStyle &bs = (i == mSelected) ? mStyle.tabActive : mStyle.tabIdle;
-            drawRoundedRect(t, Rect{i * tw, 0, tw - 2.0, tabHeight}, bs.cornerRadius, bs.paint);
+        // Inactive tabs are recessed (start a few px down, shorter). The active tab
+        // is full height and extends DOWN past the strip; the page (drawn on top of
+        // this onPaint) covers the overhang, so the active tab reads as merged with
+        // the content below — a united, connected-tab look.
+        auto drawTab = [&](int i, bool active) {
+            const BoxStyle &bs = active ? mStyle.tabActive : mStyle.tabIdle;
+            const double y = active ? 0.0 : 4.0;
+            const double hh = active ? tabHeight + 10.0 : tabHeight - 4.0;
+            drawRoundedRect(t, Rect{i * tw + 1.0, y, tw - 2.0, hh}, bs.cornerRadius, bs.paint);
             t.setFill(mStyle.label.color);
             t.drawText(mTitles[i], i * tw + 10.0, tabHeight * 0.5 + mStyle.label.sizePx * 0.35, mStyle.label.sizePx);
-        }
+        };
+        for (int i = 0; i < n; ++i)
+            if (i != mSelected)
+                drawTab(i, false);
+        if (mSelected >= 0 && mSelected < n)
+            drawTab(mSelected, true);  // active last, on top
     }
 
     bool TabView::handleGesture(const Gesture &g, const Point &localPoint)
