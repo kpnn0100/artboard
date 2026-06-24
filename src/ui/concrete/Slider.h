@@ -7,6 +7,7 @@
 #include "../base/AbstractSlider.h"
 #include "../base/RectangleSegment.h"
 #include "../base/CircleSegment.h"
+#include <functional>
 
 namespace artboard
 {
@@ -14,6 +15,10 @@ namespace artboard
     {
     public:
         explicit Slider(const SliderStyle &style = Theme::basicTheme().slider);
+
+        /** Fired when the user changes the value (drag / click / key / reset),
+         *  not when setValue() is called programmatically (mirrors Knob). */
+        std::function<void(double)> onChange;
 
         void setStyle(const SliderStyle &style);
         const SliderStyle &style() const { return mStyle; }

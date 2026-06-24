@@ -83,7 +83,9 @@ package ui {
   class Column
   class AbstractSlider
   class ModBus
-  class Slider
+  class Slider {
+    + onChange : (value)
+  }
   class Button
   class Checkbox
   class TextBox

@@ -210,6 +210,9 @@ types without creating a deep inheritance chain.
 
 - Pointer down, drag, and click convert local x-position into a slider value.
 - Left and right arrow keys decrement or increment the value.
+- Each of these (and the double-click reset) fires `onChange(value())` with the resulting
+  value; a programmatic `setValue()` does **not** fire `onChange` (so syncing controls to
+  state doesn't recurse) — same contract as `Knob`.
 
 ### Rendering sequence
 

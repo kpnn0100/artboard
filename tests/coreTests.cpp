@@ -1250,6 +1250,33 @@ TEST(Slider_full)
     sl0->onGesture({Gesture::Type::Down, {5, 5}, {5, 5}, PointerButton::Left});
     CHECK_NEAR(sl0->value(), sl0->minimum(), 1e-9);
 }
+TEST(Slider_onChange_fires_on_interaction)
+{
+    auto sl = std::make_shared<Slider>();  // width 160, range 0..1
+    double last = -1.0; int calls = 0;
+    sl->onChange = [&](double v) { last = v; ++calls; };
+
+    sl->onGesture({Gesture::Type::Down, {80, 14}, {80, 14}, PointerButton::Left});
+    CHECK(calls == 1);
+    CHECK_NEAR(last, sl->value(), 1e-9);          // reports the new value
+    CHECK_NEAR(sl->value(), 0.5, 1e-9);
+    sl->onGesture({Gesture::Type::Drag, {160, 14}, {160, 14}, PointerButton::Left});
+    CHECK_NEAR(last, sl->value(), 1e-9);
+
+    sl->setDefault(0.25);
+    sl->onGesture({Gesture::Type::DoubleClick, {10, 14}, {10, 14}, PointerButton::Left});
+    CHECK_NEAR(last, 0.25, 1e-9);                  // double-click reset fires onChange
+
+    sl->requestFocus();
+    sl->dispatchKey({KeyEvent::Type::Down, 39});   // right arrow
+    sl->dispatchKey({KeyEvent::Type::Down, 37});   // left arrow
+    CHECK(calls >= 5);
+
+    const int before = calls;
+    sl->setValue(0.9);                             // programmatic -> no callback
+    CHECK(calls == before);
+}
+
 TEST(AbstractSlider_clamp_reversed_range)
 {
     AbstractSlider s(0.0, 5.0, 1.0); // max < min -> clamp returns mMin

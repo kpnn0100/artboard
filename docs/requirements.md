@@ -92,7 +92,9 @@ segments and controls.
 The framework shall provide baseline implementations for:
 
 - `Button`
-- `Slider`
+- `Slider` — a horizontal ranged control; drag/click/arrow-keys set the value and emit
+  `onChange(value)` (only on user interaction, never on a programmatic `setValue`), matching
+  `Knob`. Double-click resets to default (FR-9a).
 - `Checkbox`
 - `TextBox`
 

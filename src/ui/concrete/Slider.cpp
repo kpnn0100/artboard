@@ -27,11 +27,15 @@ namespace artboard
         if (g.type == Gesture::Type::DoubleClick)
         {
             resetToDefault(); // double-click restores the default value
+            if (onChange)
+                onChange(value());
             return true;
         }
         if (g.type == Gesture::Type::Down || g.type == Gesture::Type::Drag || g.type == Gesture::Type::Click)
         {
             setValue(valueForLocalX(localPoint.x));
+            if (onChange)
+                onChange(value());
             return true;
         }
         return Segment::handleGesture(g, localPoint);
@@ -46,11 +50,15 @@ namespace artboard
         if (event.keyCode == 37)
         {
             setValue(value() - step);
+            if (onChange)
+                onChange(value());
             return true;
         }
         if (event.keyCode == 39)
         {
             setValue(value() + step);
+            if (onChange)
+                onChange(value());
             return true;
         }
         return Segment::handleKey(event);
