@@ -86,6 +86,8 @@ package ui {
   class Slider {
     + onChange : (value)
     + setClickJumps(bool)
+    + advance(nowMs)  ' spring-smoothed display
+    + displayValue()
   }
   class Button
   class Checkbox

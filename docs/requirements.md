@@ -95,8 +95,10 @@ The framework shall provide baseline implementations for:
 - `Slider` — a horizontal ranged control; drag/click/arrow-keys set the value and emit
   `onChange(value)` (only on user interaction, never on a programmatic `setValue`), matching
   `Knob`. Double-click resets to default (FR-9a). `setClickJumps(false)` makes the value change
-  **only on drag** (a bare press/click no longer jumps to the cursor), so a double-click reliably
-  resets without a click first hijacking the value; the default is `true` (press jumps).
+  **only on drag** (a bare press/click no longer jumps to the cursor); the default is `true`
+  (press jumps to the cursor). Like `Knob`, the Slider's **displayed** thumb/fill is a
+  spring-smoothed follower of the real value (FR-9a), so a click or reset glides to the new
+  position instead of snapping, while `onChange` still reports the final value immediately.
 - `Checkbox`
 - `TextBox`
 

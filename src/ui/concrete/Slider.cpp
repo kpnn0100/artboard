@@ -22,6 +22,31 @@ namespace artboard
         Segment::render(t, parent);
     }
 
+    void Slider::advance(double nowMs)
+    {
+        double dt = mLastMs < 0.0 ? 0.0 : (nowMs - mLastMs) / 1000.0;
+        mLastMs = nowMs;
+        if (!mDisplayInit) { mDisplay = value(); mDisplayInit = true; }
+        if (dt > 0.0)
+        {
+            if (dt > 0.05) dt = 0.05;
+            const double omega = 18.0;  // critically-damped spring, ~0.2s settle (matches Knob)
+            const double acc = -2.0 * omega * mVel - omega * omega * (mDisplay - value());
+            mVel += acc * dt;
+            mDisplay += mVel * dt;
+        }
+        Segment::advance(nowMs);
+    }
+
+    double Slider::displayNormalized() const
+    {
+        if (!mDisplayInit) { mDisplay = value(); mDisplayInit = true; }
+        const double span = maximum() - minimum();
+        if (span <= 0.0) return 0.0;
+        double n = (mDisplay - minimum()) / span;
+        return n < 0.0 ? 0.0 : (n > 1.0 ? 1.0 : n);
+    }
+
     bool Slider::handleGesture(const Gesture &g, const Point &localPoint)
     {
         if (g.type == Gesture::Type::DoubleClick)
@@ -94,7 +119,7 @@ namespace artboard
 
         const double trackHeight = height.value() * 0.35;
         const double trackY = (height.value() - trackHeight) * 0.5;
-        const double normalized = normalizedValue();
+        const double normalized = displayNormalized();  // spring-smoothed thumb/fill
         const double thumbDiameter = mStyle.thumbRadius * 2.0;
         const double thumbCenter = normalized * width.value();
 

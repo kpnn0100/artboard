@@ -1293,6 +1293,27 @@ TEST(Slider_onChange_fires_on_interaction)
     CHECK(calls == before);
 }
 
+TEST(Slider_click_jumps_and_display_springs)
+{
+    auto sl = std::make_shared<Slider>();  // width 160, range 0..1, clickJumps default on
+    double last = -1.0;
+    sl->onChange = [&](double v) { last = v; };
+    sl->advance(0.0);  // seed the display at the current value (as the frame loop does)
+
+    // a click jumps the TARGET value immediately to the cursor (far right -> 1.0)
+    sl->onGesture({Gesture::Type::Click, {160, 14}, {160, 14}, PointerButton::Left});
+    CHECK_NEAR(sl->value(), 1.0, 1e-9);
+    CHECK_NEAR(last, 1.0, 1e-9);
+
+    // but the DISPLAYED value springs there over a few frames, not instantly
+    sl->advance(16.0);
+    const double early = sl->displayValue();
+    CHECK(early > 0.0 && early < 1.0);          // mid-glide, not snapped
+    for (double t = 32.0; t <= 600.0; t += 16.0) sl->advance(t);
+    sl->advance(900.0);                          // large gap exercises the dt clamp
+    CHECK_NEAR(sl->displayValue(), 1.0, 1e-2);  // settles at the target
+}
+
 TEST(Slider_clickJumps_off)
 {
     auto sl = std::make_shared<Slider>();  // width 160, range 0..1

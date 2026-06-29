@@ -28,6 +28,10 @@ namespace artboard
         void setStyle(const SliderStyle &style);
         const SliderStyle &style() const { return mStyle; }
         void render(IRenderTarget &t, const Transform &parent = Transform::identity()) const override;
+        /** Eases the displayed thumb/fill toward the target value each frame. */
+        void advance(double nowMs) override;
+        /** The spring-smoothed displayed value (lags the target during the glide). */
+        double displayValue() const { if (!mDisplayInit) { mDisplay = value(); mDisplayInit = true; } return mDisplay; }
 
     protected:
         bool handleGesture(const Gesture &g, const Point &localPoint) override;
@@ -37,11 +41,18 @@ namespace artboard
         void ensureVisualTree() const;
         void syncVisuals() const;
         double valueForLocalX(double localX) const;
+        double displayNormalized() const;  // spring-smoothed value mapped to [0,1]
 
         SliderStyle mStyle;
         bool mClickJumps = true;
         mutable std::shared_ptr<RectangleSegment> mTrack;
         mutable std::shared_ptr<RectangleSegment> mRangeFill;
         mutable std::shared_ptr<CircleSegment> mThumb;
+        // Spring-smoothed display value (mirrors Knob): the thumb glides to the
+        // target instead of snapping. mutable so onPaint can seed it pre-advance.
+        mutable double mDisplay = 0.0;
+        mutable bool mDisplayInit = false;
+        double mVel = 0.0;
+        double mLastMs = -1.0;
     };
 }
