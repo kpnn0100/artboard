@@ -145,7 +145,17 @@ through the input + render HALs:
   `onChange(bool)`.
 - `ProgressBar` — a non-interactive bar displaying a `[0,1]` value (e.g. a level meter).
 - `ComboBox` — a drop-down that shows the selected option and, when open, a list of options;
-  selecting one closes it and emits `onChange(index)`.
+  selecting one closes it and emits `onChange(index)`. The open list is drawn in the **overlay
+  pass** (`onOverlay`) over an opaque backing, so it sits on top of every other control and is
+  never clipped by its owning panel; opening also `raise()`s the box so dropdown clicks are
+  hit-tested before sibling controls beneath the list.
+
+### FR-OVERLAY Overlay render pass
+`Segment::renderOverlay()` is a second tree traversal the app runs on the root after
+`render()`. It composes transforms exactly like `render()` but calls `onOverlay()` (default
+empty) and applies **no clipping**, so popups/dropdowns escape their parent's bounds and draw
+above the entire scene. `Segment::raise()` moves a segment to the end of its parent's child
+list (drawn last among siblings, hit-tested first).
 - `TabView` — a tab strip plus pages; selecting a tab shows its page and emits `onChange(index)`.
 - `ScrollView` — a clipped viewport over taller content; vertical drag (and a draggable thumb)
   scrolls the content within `[0, contentHeight - viewportHeight]`.

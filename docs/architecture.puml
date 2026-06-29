@@ -74,7 +74,11 @@ package ui {
   class KeyEvent
   abstract class InputController
   class Theme
-  class Segment
+  class Segment {
+    + render() / renderOverlay()  ' 2nd pass: onOverlay, unclipped
+    + raise()  ' move to end of parent children
+    # onPaint() / onOverlay()
+  }
   class RectangleSegment
   class CircleSegment
   class LabelSegment

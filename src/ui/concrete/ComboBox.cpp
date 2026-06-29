@@ -43,6 +43,7 @@ namespace artboard
         if (!mOpen)
         {
             mOpen = true;
+            raise();  // hit-tested first so dropdown clicks don't fall through to siblings
             return true;
         }
         if (localPoint.y <= h)
@@ -78,19 +79,27 @@ namespace artboard
         t.closePath();
         t.setFill(mStyle.caretColor);
         t.fillPath();
+    }
 
-        if (mOpen)
+    void ComboBox::onOverlay(IRenderTarget &t) const
+    {
+        if (!mOpen)
+            return;
+        // Drawn in the overlay pass so it sits on top of every other control and is
+        // never clipped by the owning panel. An opaque scrim under the popup hides
+        // whatever is behind it.
+        const double w = width.value(), h = height.value();
+        const double popupH = (double)mOptions.size() * rowHeight;
+        drawRoundedRect(t, Rect{-1, h - 1, w + 2, popupH + 2}, mStyle.popup.cornerRadius,
+                        Paint::filled(mStyle.field.paint.fill));  // opaque backing
+        drawRoundedRect(t, Rect{0, h, w, popupH}, mStyle.popup.cornerRadius, mStyle.popup.paint);
+        for (int i = 0; i < (int)mOptions.size(); ++i)
         {
-            const double popupH = (double)mOptions.size() * rowHeight;
-            drawRoundedRect(t, Rect{0, h, w, popupH}, mStyle.popup.cornerRadius, mStyle.popup.paint);
-            for (int i = 0; i < (int)mOptions.size(); ++i)
-            {
-                const double ry = h + i * rowHeight;
-                if (i == mSelected)
-                    drawRoundedRect(t, Rect{0, ry, w, rowHeight}, mStyle.rowSelected.cornerRadius, mStyle.rowSelected.paint);
-                t.setFill(mStyle.text.color);
-                t.drawText(mOptions[i], 10.0, ry + rowHeight * 0.5 + mStyle.text.sizePx * 0.35, mStyle.text.sizePx);
-            }
+            const double ry = h + i * rowHeight;
+            if (i == mSelected)
+                drawRoundedRect(t, Rect{0, ry, w, rowHeight}, mStyle.rowSelected.cornerRadius, mStyle.rowSelected.paint);
+            t.setFill(mStyle.text.color);
+            t.drawText(mOptions[i], 10.0, ry + rowHeight * 0.5 + mStyle.text.sizePx * 0.35, mStyle.text.sizePx);
         }
     }
 }

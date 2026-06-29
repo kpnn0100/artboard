@@ -25,11 +25,18 @@ namespace artboard
         int focusIndex = 0;
 
         void render(IRenderTarget &t, const Transform &parent = Transform::identity()) const override;
+        /** Second render pass over the whole tree, AFTER render(), for content that
+         *  must escape clipping and sit on top of everything (open dropdowns/popups).
+         *  The app calls it once on the root after render(). Unclipped by design. */
+        void renderOverlay(IRenderTarget &t, const Transform &parent = Transform::identity()) const;
         bool hitTest(const Point &p) const override;
         void onGesture(const Gesture &g) override;
 
         void addChild(std::shared_ptr<Segment> child);
         void clearChildren();
+        /** Move this segment to the end of its parent's child list (drawn last among
+         *  siblings, hit-tested first) — e.g. when a popup opens. */
+        void raise();
         int childCount() const { return (int)mChildren.size(); }
         const std::vector<std::shared_ptr<Segment>> &children() const { return mChildren; }
 
@@ -62,6 +69,8 @@ namespace artboard
     protected:
         void onDraw(IRenderTarget &) const override {}
         virtual void onPaint(IRenderTarget &t) const {}
+        /** Drawn in the overlay pass (on top of everything, unclipped). Default none. */
+        virtual void onOverlay(IRenderTarget &t) const {}
         virtual bool hitTestSelf(const Point &localPoint) const;
         virtual bool handleGesture(const Gesture &g, const Point &localPoint);
         virtual bool handleKey(const KeyEvent &event);

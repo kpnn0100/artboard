@@ -1036,8 +1036,10 @@ TEST(ComboBox_open_select_and_render)
 
     c->onGesture({Gesture::Type::Click, {10, 10}, {10, 10}, PointerButton::Left}); // open
     CHECK(c->isOpen());
-    RecordingTarget open; c->render(open); // popup + rows + selected highlight
-    CHECK(open.count(K::DrawText) >= 4);   // field + 3 rows
+    RecordingTarget open; c->render(open);       // main pass: field only (no rows)
+    CHECK(open.count(K::DrawText) == 1);         // just the selected-option label
+    RecordingTarget ov; c->renderOverlay(ov);    // overlay pass: the dropdown rows
+    CHECK(ov.count(K::DrawText) >= 3);            // 3 option rows drawn on top
 
     // click row 1 (Saw): y in popup band
     c->onGesture({Gesture::Type::Click, {10, 32 + 28 + 5}, {0, 0}, PointerButton::Left});
@@ -1068,6 +1070,36 @@ TEST(ComboBox_open_select_and_render)
     RecordingTarget e; empty->render(e); // empty options branch
     empty->onGesture({Gesture::Type::Down, {1, 1}, {1, 1}, PointerButton::Left}); // non-Click branch
 }
+TEST(ComboBox_overlay_on_top_and_raise)
+{
+    auto root = std::make_shared<Segment>();
+    root->width.set(300.0); root->height.set(300.0);
+    auto combo = std::make_shared<ComboBox>();
+    combo->setOptions({"a", "b", "c"});
+    combo->x.set(0.0); combo->y.set(0.0); combo->width.set(160.0); combo->height.set(32.0);
+    int picked = -1; combo->onChange = [&](int i) { picked = i; };
+    // a sibling that OVERLAPS the dropdown band (y 32..116), added AFTER the combo
+    auto sib = std::make_shared<Button>("x");
+    sib->x.set(0.0); sib->y.set(40.0); sib->width.set(160.0); sib->height.set(50.0);
+    bool sibClicked = false; sib->onClick = [&] { sibClicked = true; };
+    root->addChild(combo); root->addChild(sib);
+
+    RecordingTarget closed; root->renderOverlay(closed);
+    CHECK(closed.count(K::DrawText) == 0);  // nothing in the overlay pass while closed
+
+    root->onGesture({Gesture::Type::Click, {10, 10}, {10, 10}, PointerButton::Left});  // open
+    CHECK(combo->isOpen());
+    CHECK(root->children().back().get() == combo.get());  // raised to front of input/z
+
+    RecordingTarget ov; root->renderOverlay(ov);
+    CHECK(ov.count(K::DrawText) >= 3);      // dropdown rows drawn on top
+
+    // click a row that also sits inside the sibling's bounds -> combo wins, not the sibling
+    root->onGesture({Gesture::Type::Click, {10, 46}, {10, 46}, PointerButton::Left});
+    CHECK(picked == 0);
+    CHECK(!sibClicked);
+}
+
 TEST(TabView_pages_and_tab_clicks)
 {
     auto tv = std::make_shared<TabView>();

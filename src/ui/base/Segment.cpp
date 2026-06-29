@@ -66,6 +66,34 @@ namespace artboard
         dispatchGesture(g);
     }
 
+    void Segment::renderOverlay(IRenderTarget &t, const Transform &parent) const
+    {
+        if (!visible)
+            return;
+        const Transform world = parent.mul(localTransform());
+        t.save();
+        t.setTransform(world);
+        onOverlay(t);  // unclipped, on top of the whole tree
+        t.restore();
+        for (const auto &child : mChildren)
+            child->renderOverlay(t, world);
+    }
+
+    void Segment::raise()
+    {
+        if (!mParent)
+            return;
+        auto &sib = mParent->mChildren;
+        for (auto it = sib.begin(); it != sib.end(); ++it)
+            if (it->get() == this)
+            {
+                auto self = *it;
+                sib.erase(it);
+                sib.push_back(self);
+                break;
+            }
+    }
+
     void Segment::addChild(std::shared_ptr<Segment> child)
     {
         if (!child)

@@ -27,6 +27,7 @@ namespace artboard
 
     protected:
         void onPaint(IRenderTarget &t) const override;
+        void onOverlay(IRenderTarget &t) const override;  // dropdown, drawn on top
         bool hitTestSelf(const Point &localPoint) const override;
         bool handleGesture(const Gesture &g, const Point &localPoint) override;
 
