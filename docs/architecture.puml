@@ -88,6 +88,7 @@ package ui {
     + setClickJumps(bool)
     + advance(nowMs)  ' spring-smoothed display
     + displayValue()
+    + setTrackGradient(left,right)
   }
   class Button
   class Checkbox

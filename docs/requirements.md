@@ -99,6 +99,9 @@ The framework shall provide baseline implementations for:
   (press jumps to the cursor). Like `Knob`, the Slider's **displayed** thumb/fill is a
   spring-smoothed follower of the real value (FR-9a), so a click or reset glides to the new
   position instead of snapping, while `onChange` still reports the final value immediately.
+  `setTrackGradient(left,right)` renders the track as a horizontal gradient (e.g. a temperature
+  blue->yellow ramp) instead of the solid track + accent fill, so the slider previews what each
+  end of the range looks like; the thumb still marks the position.
 - `Checkbox`
 - `TextBox`
 

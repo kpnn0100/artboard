@@ -1314,6 +1314,22 @@ TEST(Slider_click_jumps_and_display_springs)
     CHECK_NEAR(sl->displayValue(), 1.0, 1e-2);  // settles at the target
 }
 
+TEST(Slider_gradient_track)
+{
+    auto sl = std::make_shared<Slider>();
+    sl->width.set(120.0); sl->setRange(2000.0, 9000.0);
+
+    RecordingTarget plain;
+    sl->render(plain);
+    CHECK(plain.count(DrawOp::Kind::SetLinearFill) == 0);  // solid track: no gradient
+
+    sl->setTrackGradient(Color{0.2f, 0.4f, 1.0f, 1.0f}, Color{1.0f, 0.85f, 0.3f, 1.0f});
+    RecordingTarget grad;
+    sl->render(grad);
+    CHECK(grad.count(DrawOp::Kind::SetLinearFill) == 1);   // one gradient track
+    CHECK(grad.count(DrawOp::Kind::FillPath) >= 1);        // filled as a path
+}
+
 TEST(Slider_clickJumps_off)
 {
     auto sl = std::make_shared<Slider>();  // width 160, range 0..1

@@ -25,6 +25,11 @@ namespace artboard
          *  hijacks it — double-click then reliably resets to the default). */
         void setClickJumps(bool jumps) { mClickJumps = jumps; }
 
+        /** Render the track as a horizontal gradient (left value -> right value),
+         *  e.g. a temperature blue->yellow ramp. Hides the solid track + range fill;
+         *  the thumb still marks the position. Clear with a transparent pair. */
+        void setTrackGradient(const Color &left, const Color &right) { mGradLeft = left; mGradRight = right; mHasGradient = true; }
+
         void setStyle(const SliderStyle &style);
         const SliderStyle &style() const { return mStyle; }
         void render(IRenderTarget &t, const Transform &parent = Transform::identity()) const override;
@@ -34,6 +39,7 @@ namespace artboard
         double displayValue() const { if (!mDisplayInit) { mDisplay = value(); mDisplayInit = true; } return mDisplay; }
 
     protected:
+        void onPaint(IRenderTarget &t) const override;  // gradient track (when set)
         bool handleGesture(const Gesture &g, const Point &localPoint) override;
         bool handleKey(const KeyEvent &event) override;
 
@@ -54,5 +60,7 @@ namespace artboard
         mutable bool mDisplayInit = false;
         double mVel = 0.0;
         double mLastMs = -1.0;
+        bool mHasGradient = false;
+        Color mGradLeft, mGradRight;
     };
 }

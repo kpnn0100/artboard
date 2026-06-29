@@ -38,6 +38,29 @@ namespace artboard
         Segment::advance(nowMs);
     }
 
+    void Slider::onPaint(IRenderTarget &t) const
+    {
+        if (!mHasGradient)
+            return;
+        const double trackHeight = height.value() * 0.35;
+        const double y = (height.value() - trackHeight) * 0.5;
+        const double w = width.value();
+        const double r = trackHeight * 0.5;  // pill ends
+        t.setLinearFill(0.0, 0.0, w, 0.0, mGradLeft, mGradRight);
+        t.beginPath();
+        t.moveTo(r, y);
+        t.lineTo(w - r, y);
+        t.quadTo(w, y, w, y + r);
+        t.lineTo(w, y + trackHeight - r);
+        t.quadTo(w, y + trackHeight, w - r, y + trackHeight);
+        t.lineTo(r, y + trackHeight);
+        t.quadTo(0.0, y + trackHeight, 0.0, y + trackHeight - r);
+        t.lineTo(0.0, y + r);
+        t.quadTo(0.0, y, r, y);
+        t.closePath();
+        t.fillPath();
+    }
+
     double Slider::displayNormalized() const
     {
         if (!mDisplayInit) { mDisplay = value(); mDisplayInit = true; }
@@ -122,6 +145,10 @@ namespace artboard
         const double normalized = displayNormalized();  // spring-smoothed thumb/fill
         const double thumbDiameter = mStyle.thumbRadius * 2.0;
         const double thumbCenter = normalized * width.value();
+
+        // A gradient track is drawn by onPaint; hide the solid track + range fill.
+        mTrack->visible = !mHasGradient;
+        mRangeFill->visible = !mHasGradient;
 
         mTrack->style = mStyle.track;
         mTrack->x.set(0.0);
