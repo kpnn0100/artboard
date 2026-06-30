@@ -29,6 +29,8 @@ namespace artboard
         double mDoubleClickMs = 300.0;
 
         bool mAlt = false;  // modifier state of the event currently being processed
+        bool mShift = false;
+        bool mCtrl = false;
         bool mPressed = false;
         bool mDragging = false;
         Point mDownPos;

@@ -700,6 +700,24 @@ TEST(Gesture_alt_modifier_passthrough)
     CHECK(clickAlt == false);  // and reflects the releasing event's state
 }
 
+TEST(Gesture_shift_ctrl_modifier_passthrough)
+{
+    RawPointer down{RawPointer::Kind::Down, {5, 5}, PB::Left, 100};
+    down.shift = true; down.ctrl = true;
+    RawPointer up{RawPointer::Kind::Up, {5, 5}, PB::Left, 120};
+    up.shift = false; up.ctrl = true;
+    auto g = recordGestures([&](GestureRecognizer &r) { r.feed(down); r.feed(up); });
+    bool downShift = false, clickShift = true, clickCtrl = false;
+    for (const auto &e : g)
+    {
+        if (e.type == GT::Down) downShift = e.shift;
+        if (e.type == GT::Click) { clickShift = e.shift; clickCtrl = e.ctrl; }
+    }
+    CHECK(downShift == true);
+    CHECK(clickShift == false);  // reflects the releasing event
+    CHECK(clickCtrl == true);
+}
+
 TEST(Gesture_not_double_when_far_or_late)
 {
     auto far = recordGestures([](GestureRecognizer &r) {

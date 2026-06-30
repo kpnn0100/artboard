@@ -14,6 +14,8 @@ namespace artboard
         {
             Gesture g{t, pos, start, b};
             g.alt = mAlt;  // carry the current event's modifier state onto the gesture
+            g.shift = mShift;
+            g.ctrl = mCtrl;
             mSink(g);
         }
     }
@@ -22,6 +24,8 @@ namespace artboard
     {
         using K = RawPointer::Kind;
         mAlt = e.alt;
+        mShift = e.shift;
+        mCtrl = e.ctrl;
         switch (e.kind)
         {
         case K::Down:

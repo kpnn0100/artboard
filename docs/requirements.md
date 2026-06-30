@@ -277,13 +277,14 @@ re-uploads only when the pixels change, and draws it **aspect-fitted** into its 
 can align to the displayed image. `ImageView` is platform-free (emits only the HAL
 primitives above).
 
-### FR-20 Pointer modifier (Alt)
+### FR-20 Pointer modifiers (Alt / Shift / Ctrl)
 
-`RawPointer` and the synthesized `Gesture` carry a boolean **`alt`** flag (Alt/Option held).
-The adapter sets it on each raw event; the `GestureRecognizer` carries the current event's
-state onto every emitted gesture. This lets controls offer alt-drag affordances (e.g. pulling
-out bezier tangent handles on a curve point) without a separate keyboard channel. Other
-modifiers can be added the same way when needed.
+`RawPointer` and the synthesized `Gesture` carry boolean **`alt`**, **`shift`**, and **`ctrl`**
+flags (modifier keys held). The adapter sets them on each raw event; the `GestureRecognizer`
+carries the current event's state onto every emitted gesture. This lets controls offer
+modifier affordances without a separate keyboard channel: alt-drag (e.g. bezier tangent
+handles), shift-click (range selection), and ctrl/cmd-click (toggle selection) in lists such
+as a filmstrip.
 
 ### FR-21 Tab/content unification
 

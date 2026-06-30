@@ -19,7 +19,9 @@ namespace artboard
         Point pos;
         PointerButton button = PointerButton::Left;
         double timeMs = 0.0;
-        bool alt = false;  // Alt/Option modifier held (for alt-drag affordances)
+        bool alt = false;    // Alt/Option modifier held (for alt-drag affordances)
+        bool shift = false;  // Shift modifier (range selection)
+        bool ctrl = false;   // Ctrl/Cmd modifier (toggle selection)
     };
 
     struct Gesture
@@ -30,5 +32,7 @@ namespace artboard
         Point start;                            // press origin (for drags)
         PointerButton button = PointerButton::Left;
         bool alt = false;                       // Alt/Option modifier held at the event
+        bool shift = false;                     // Shift modifier held at the event
+        bool ctrl = false;                      // Ctrl/Cmd modifier held at the event
     };
 }
