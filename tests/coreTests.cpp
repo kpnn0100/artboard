@@ -1702,4 +1702,34 @@ TEST(ImageView_empty_and_clear)
     CHECK(!v.hasImage());
 }
 
+TEST(ImageView_zoom_about_point)
+{
+    ImageView v;
+    v.width.set(100); v.height.set(100);
+    std::vector<uint8_t> px((size_t)100 * 100 * 4, 200);
+    v.setImage(px.data(), 100, 100);
+    CHECK_NEAR(v.fittedRect().w, 100.0, 1e-9);  // 1x fills the square view
+
+    v.zoomAbout(2.0, {50, 50});                 // zoom 2x about the centre
+    CHECK_NEAR(v.zoom(), 2.0, 1e-9);
+    Rect f = v.fittedRect();
+    CHECK_NEAR(f.w, 200.0, 1e-9);
+    // the centre point stays fixed: fitted.x + 0.5*w == 50
+    CHECK_NEAR(f.x + 0.5 * f.w, 50.0, 1e-6);
+    // pan is clamped so the image still covers the 100x100 view
+    CHECK(f.x <= 1e-9 && f.x + f.w >= 100.0 - 1e-9);
+
+    v.zoomAbout(0.1, {50, 50});                 // clamps to the 1x minimum
+    CHECK_NEAR(v.zoom(), 1.0, 1e-9);
+    CHECK_NEAR(v.fittedRect().x, 0.0, 1e-9);    // reset pan at 1x
+
+    // draw is clipped to the view (a zoomed image must not spill out)
+    v.zoomAbout(3.0, {20, 20});
+    RecordingTarget t; v.render(t);
+    CHECK(t.count(K::ClipRect) >= 1);
+    CHECK(t.count(K::DrawImage) == 1);
+    v.resetView();
+    CHECK_NEAR(v.zoom(), 1.0, 1e-9);
+}
+
 int main() { return mini::runAll(); }

@@ -23,7 +23,7 @@ namespace artboard
         mId = 0;  // adapter reclaims on its own teardown
     }
 
-    Rect ImageView::fittedRect() const
+    Rect ImageView::baseFittedRect() const
     {
         const double bw = width.value(), bh = height.value();
         if (mW <= 0 || mH <= 0 || bw <= 0 || bh <= 0)
@@ -35,6 +35,38 @@ namespace artboard
                                               : (sx < sy ? sx : sy);  // contain, letterbox
         const double w = mW * s, h = mH * s;
         return Rect{(bw - w) * 0.5, (bh - h) * 0.5, w, h};
+    }
+
+    Rect ImageView::fittedRect() const
+    {
+        const Rect b = baseFittedRect();
+        if (mZoom == 1.0) return b;
+        const double w = b.w * mZoom, h = b.h * mZoom;
+        return Rect{b.x - (w - b.w) * 0.5 + mPanX, b.y - (h - b.h) * 0.5 + mPanY, w, h};
+    }
+
+    void ImageView::zoomAbout(double factor, const Point &local)
+    {
+        const Rect before = fittedRect();
+        double nz = mZoom * factor;
+        if (nz < 1.0) nz = 1.0; else if (nz > 8.0) nz = 8.0;
+        // normalized image point currently under `local`
+        const double u = before.w > 0 ? (local.x - before.x) / before.w : 0.5;
+        const double v = before.h > 0 ? (local.y - before.y) / before.h : 0.5;
+        mZoom = nz;
+        const Rect base = baseFittedRect();
+        const double nw = base.w * mZoom, nh = base.h * mZoom;
+        // place the same normalized point back under `local` (invert fittedRect's math)
+        mPanX = local.x - u * nw - base.x + (nw - base.w) * 0.5;
+        mPanY = local.y - v * nh - base.y + (nh - base.h) * 0.5;
+        // clamp pan so the zoomed image still covers the view (no gaps)
+        const double bw = width.value(), bh = height.value();
+        Rect f = fittedRect();
+        if (f.x > 0) mPanX -= f.x;
+        if (f.x + f.w < bw) mPanX += bw - (f.x + f.w);
+        if (f.y > 0) mPanY -= f.y;
+        if (f.y + f.h < bh) mPanY += bh - (f.y + f.h);
+        if (mZoom == 1.0) { mPanX = 0; mPanY = 0; }
     }
 
     void ImageView::onPaint(IRenderTarget &t) const
@@ -52,6 +84,10 @@ namespace artboard
             t.updateImage(mId, mPixels.data(), mW, mH);
             mDirty = false;
         }
+        // clip to the view so a zoomed image never spills into the rest of the UI
+        t.save();
+        t.clipRect(0, 0, width.value(), height.value());
         t.drawImage(mId, fittedRect());
+        t.restore();
     }
 }

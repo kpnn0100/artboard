@@ -26,17 +26,28 @@ namespace artboard
         int imageHeight() const { return mH; }
 
         void setFit(Fit f) { mFit = f; }
-        /** Destination rect (local space) the image is drawn into for the current fit. */
+        /** Destination rect (local space) the image is drawn into for the current fit,
+         *  including the current zoom + pan. */
         Rect fittedRect() const;
+
+        // ── zoom / pan (for ctrl-scroll magnification) ──
+        double zoom() const { return mZoom; }
+        void resetView() { mZoom = 1.0; mPanX = mPanY = 0.0; }
+        /** Multiply the zoom by `factor` (clamped 1..8) keeping the image point under
+         *  `local` fixed; pan is clamped so the image still covers the view. */
+        void zoomAbout(double factor, const Point &local);
 
     protected:
         void onPaint(IRenderTarget &t) const override;
         bool hitTestSelf(const Point &) const override { return false; }  // display-only
 
     private:
+        Rect baseFittedRect() const;  // aspect-fit rect at zoom 1, no pan
+
         std::vector<uint8_t> mPixels;
         int mW = 0, mH = 0;
         Fit mFit = Fit::Contain;
+        double mZoom = 1.0, mPanX = 0.0, mPanY = 0.0;
         mutable int mId = 0;
         mutable bool mDirty = false;
         mutable IRenderTarget *mLastTarget = nullptr;

@@ -277,8 +277,12 @@ The framework shall also provide an **`ImageView`** segment that owns a copy of 
 image's pixels, registers it lazily (re-registering if drawn into a different target),
 re-uploads only when the pixels change, and draws it **aspect-fitted** into its bounds
 (`Contain` / `Cover` / `Fill`), exposing the fitted rect (`fittedRect()`) so overlays
-can align to the displayed image. `ImageView` is platform-free (emits only the HAL
-primitives above).
+can align to the displayed image. It also supports **zoom + pan**: `zoomAbout(factor,
+local)` multiplies the zoom (clamped 1..8) keeping the image point under `local` fixed
+and clamps the pan so the image still covers the view; `fittedRect()` reflects the
+zoomed/panned rect (so overlays follow), and the draw is clipped to the view so a
+zoomed image never spills out. `resetView()` restores 1x. `ImageView` is platform-free
+(emits only the HAL primitives above).
 
 ### FR-20 Pointer modifiers (Alt / Shift / Ctrl)
 
