@@ -24,6 +24,18 @@ namespace artboard
 
     void Slider::advance(double nowMs)
     {
+        // Commit a deferred click-jump once the double-click guard has elapsed
+        // without a second click cancelling it.
+        if (mPendingClick)
+        {
+            if (mPendingSince < 0.0) mPendingSince = nowMs;
+            else if (nowMs - mPendingSince >= mClickGuardMs)
+            {
+                mPendingClick = false;
+                setValue(mPendingValue);
+                if (onChange) onChange(value());
+            }
+        }
         double dt = mLastMs < 0.0 ? 0.0 : (nowMs - mLastMs) / 1000.0;
         mLastMs = nowMs;
         if (!mDisplayInit) { mDisplay = value(); mDisplayInit = true; }
@@ -74,25 +86,32 @@ namespace artboard
     {
         if (g.type == Gesture::Type::DoubleClick)
         {
-            resetToDefault(); // double-click restores the default value
+            mPendingClick = false;   // cancel any deferred click-jump: reset wins cleanly
+            resetToDefault();
             if (onChange)
                 onChange(value());
             return true;
         }
-        // Drag always sets the value; a bare press/click only jumps to the cursor
-        // when click-jumps is enabled (off = the value only moves by dragging, so a
-        // double-click never gets hijacked into a value change).
-        const bool isDrag = g.type == Gesture::Type::Drag || g.type == Gesture::Type::DragStart;
-        const bool isPress = g.type == Gesture::Type::Down || g.type == Gesture::Type::Click;
-        if (isDrag || (isPress && mClickJumps))
+        // A drag sets the value immediately (unambiguous). A click-to-position jump is
+        // DEFERRED (see advance) so a double-click can cancel it — this prevents a
+        // jump-to-cursor flash (and a wasted re-render) on double-click reset.
+        if (g.type == Gesture::Type::Drag || g.type == Gesture::Type::DragStart)
         {
+            mPendingClick = false;
             setValue(valueForLocalX(localPoint.x));
             if (onChange)
                 onChange(value());
             return true;
         }
-        if (isPress)
-            return true;  // capture the press so the following drag is delivered here
+        if (g.type == Gesture::Type::Click && mClickJumps)
+        {
+            mPendingClick = true;                          // commit after the double-click guard
+            mPendingValue = valueForLocalX(localPoint.x);
+            mPendingSince = -1.0;
+            return true;
+        }
+        if (g.type == Gesture::Type::Down)
+            return true;  // capture the press so a following drag is delivered here
         return Segment::handleGesture(g, localPoint);
     }
 

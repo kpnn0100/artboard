@@ -62,5 +62,11 @@ namespace artboard
         double mLastMs = -1.0;
         bool mHasGradient = false;
         Color mGradLeft, mGradRight;
+        // A click-to-position jump is deferred briefly so a double-click (reset) can
+        // cancel it before it commits — no jump-to-cursor flash on double-click.
+        bool mPendingClick = false;
+        double mPendingValue = 0.0;
+        double mPendingSince = -1.0;
+        double mClickGuardMs = 240.0;
     };
 }

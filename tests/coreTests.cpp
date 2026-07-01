@@ -566,7 +566,8 @@ TEST(Basic_controls_composition_and_interaction)
     slider->y.set(10.0);
     slider->width.set(200.0);
     root->addChild(slider);
-    root->onGesture({Gesture::Type::Down, {60, 20}, {60, 20}, PointerButton::Left});
+    root->onGesture({Gesture::Type::Down, {60, 20}, {60, 20}, PointerButton::Left});       // capture the slider
+    root->onGesture({Gesture::Type::DragStart, {60, 20}, {60, 20}, PointerButton::Left});  // drag sets value from x
     CHECK(slider->value() > 24.0 && slider->value() < 26.0);
     slider->requestFocus();
     root->dispatchKey({KeyEvent::Type::Down, 39, ""});
@@ -1287,12 +1288,12 @@ TEST(Slider_full)
     auto sl = std::make_shared<Slider>();
     RecordingTarget r; sl->render(r);
     CHECK(r.count(K::FillPath) >= 2);
-    sl->onGesture({Gesture::Type::Down, {40, 14}, {40, 14}, PointerButton::Left});  // value from x
+    sl->onGesture({Gesture::Type::DragStart, {40, 14}, {40, 14}, PointerButton::Left});  // value from x
     CHECK(sl->value() > 0.0);
     sl->onGesture({Gesture::Type::Drag, {80, 14}, {80, 14}, PointerButton::Left});
-    sl->onGesture({Gesture::Type::Click, {160, 14}, {160, 14}, PointerButton::Left});
-    sl->onGesture({Gesture::Type::Click, {-10, 14}, {-10, 14}, PointerButton::Left}); // clamp low
-    sl->onGesture({Gesture::Type::Click, {200, 14}, {200, 14}, PointerButton::Left});  // clamp high
+    sl->onGesture({Gesture::Type::Drag, {160, 14}, {160, 14}, PointerButton::Left});
+    sl->onGesture({Gesture::Type::Drag, {-10, 14}, {-10, 14}, PointerButton::Left}); // clamp low
+    sl->onGesture({Gesture::Type::Drag, {200, 14}, {200, 14}, PointerButton::Left});  // clamp high
     sl->onGesture({Gesture::Type::Move, {10, 10}, {10, 10}, PointerButton::Left}); // default fallback
     // FR-9a: double-click resets to the default value.
     sl->setValue(0.9);
@@ -1313,16 +1314,36 @@ TEST(Slider_full)
     // width 0 -> valueForLocalX returns minimum()
     auto sl0 = std::make_shared<Slider>();
     sl0->width.set(0.0);
-    sl0->onGesture({Gesture::Type::Down, {5, 5}, {5, 5}, PointerButton::Left});
+    sl0->onGesture({Gesture::Type::Drag, {5, 5}, {5, 5}, PointerButton::Left});  // width 0 -> minimum
     CHECK_NEAR(sl0->value(), sl0->minimum(), 1e-9);
 }
+TEST(Slider_double_click_resets_despite_click_jumps)
+{
+    // Feed a real double-click (down/up/down/up) at a NON-default position through the
+    // recognizer with click-jumps on; the value must end at the default, not the cursor.
+    auto root = std::make_shared<Segment>();
+    root->width.set(200); root->height.set(40);
+    auto sl = std::make_shared<Slider>();  // width 160, range 0..1
+    sl->x.set(0); sl->y.set(0);
+    sl->setValue(0.1); sl->setDefault(0.25);
+    double maxSeen = 0.0; sl->onChange = [&](double v) { if (v > maxSeen) maxSeen = v; };
+    root->addChild(sl);
+    GestureRecognizer rec; rec.setSink([&](const Gesture &g) { root->onGesture(g); });
+    rec.feed({RawPointer::Kind::Down, {160, 14}, PB::Left, 0});
+    rec.feed({RawPointer::Kind::Up, {160, 14}, PB::Left, 10});   // -> Click (deferred, not committed)
+    rec.feed({RawPointer::Kind::Down, {160, 14}, PB::Left, 60});
+    rec.feed({RawPointer::Kind::Up, {160, 14}, PB::Left, 70});   // -> DoubleClick cancels + resets
+    CHECK_NEAR(sl->value(), 0.25, 1e-9);  // ends at the default, not the clicked cursor
+    CHECK(maxSeen <= 0.25 + 1e-9);         // the cursor value (1.0) never fired -> no flash/re-render
+}
+
 TEST(Slider_onChange_fires_on_interaction)
 {
     auto sl = std::make_shared<Slider>();  // width 160, range 0..1
     double last = -1.0; int calls = 0;
     sl->onChange = [&](double v) { last = v; ++calls; };
 
-    sl->onGesture({Gesture::Type::Down, {80, 14}, {80, 14}, PointerButton::Left});
+    sl->onGesture({Gesture::Type::DragStart, {80, 14}, {80, 14}, PointerButton::Left});  // drag sets immediately
     CHECK(calls == 1);
     CHECK_NEAR(last, sl->value(), 1e-9);          // reports the new value
     CHECK_NEAR(sl->value(), 0.5, 1e-9);
@@ -1350,18 +1371,19 @@ TEST(Slider_click_jumps_and_display_springs)
     sl->onChange = [&](double v) { last = v; };
     sl->advance(0.0);  // seed the display at the current value (as the frame loop does)
 
-    // a click jumps the TARGET value immediately to the cursor (far right -> 1.0)
+    // a click to the far right is DEFERRED (double-click guard), then commits
     sl->onGesture({Gesture::Type::Click, {160, 14}, {160, 14}, PointerButton::Left});
-    CHECK_NEAR(sl->value(), 1.0, 1e-9);
+    sl->advance(20.0);
+    CHECK_NEAR(sl->value(), 0.0, 1e-9);          // not committed yet (deferred)
+    for (double t = 40.0; t <= 320.0; t += 20.0) sl->advance(t);  // past the guard
+    CHECK_NEAR(sl->value(), 1.0, 1e-9);          // committed to the cursor
     CHECK_NEAR(last, 1.0, 1e-9);
 
-    // but the DISPLAYED value springs there over a few frames, not instantly
-    sl->advance(16.0);
+    // the DISPLAYED value then springs there over a few frames
     const double early = sl->displayValue();
-    CHECK(early > 0.0 && early < 1.0);          // mid-glide, not snapped
-    for (double t = 32.0; t <= 600.0; t += 16.0) sl->advance(t);
-    sl->advance(900.0);                          // large gap exercises the dt clamp
-    CHECK_NEAR(sl->displayValue(), 1.0, 1e-2);  // settles at the target
+    CHECK(early < 1.0);                           // mid-glide, not snapped
+    for (double t = 340.0; t <= 900.0; t += 16.0) sl->advance(t);
+    CHECK_NEAR(sl->displayValue(), 1.0, 1e-2);   // settles at the target
 }
 
 TEST(Slider_gradient_track)
