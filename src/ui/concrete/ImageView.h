@@ -36,10 +36,14 @@ namespace artboard
         /** Multiply the zoom by `factor` (clamped 1..8) keeping the image point under
          *  `local` fixed; pan is clamped so the image still covers the view. */
         void zoomAbout(double factor, const Point &local);
+        /** Translate the view by (dx,dy) local pixels, clamped to keep it covered. */
+        void panBy(double dx, double dy);
 
     protected:
         void onPaint(IRenderTarget &t) const override;
-        bool hitTestSelf(const Point &) const override { return false; }  // display-only
+        // Display-only at 1x (click-through); interactive when zoomed (drag pans).
+        bool hitTestSelf(const Point &p) const override { return mZoom > 1.0 && localBounds().contains(p); }
+        bool handleGesture(const Gesture &g, const Point &local) override;
 
     private:
         Rect baseFittedRect() const;  // aspect-fit rect at zoom 1, no pan
@@ -48,6 +52,8 @@ namespace artboard
         int mW = 0, mH = 0;
         Fit mFit = Fit::Contain;
         double mZoom = 1.0, mPanX = 0.0, mPanY = 0.0;
+        void clampPan();              // keep the zoomed image covering the view
+        Point mDragLast{0, 0};        // previous drag position (for pan deltas)
         mutable int mId = 0;
         mutable bool mDirty = false;
         mutable IRenderTarget *mLastTarget = nullptr;

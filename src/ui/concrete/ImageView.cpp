@@ -59,14 +59,49 @@ namespace artboard
         // place the same normalized point back under `local` (invert fittedRect's math)
         mPanX = local.x - u * nw - base.x + (nw - base.w) * 0.5;
         mPanY = local.y - v * nh - base.y + (nh - base.h) * 0.5;
-        // clamp pan so the zoomed image still covers the view (no gaps)
+        clampPan();
+    }
+
+    void ImageView::clampPan()
+    {
+        if (mZoom == 1.0) { mPanX = 0; mPanY = 0; return; }
+        // keep the zoomed image covering the view (no gaps at the edges)
         const double bw = width.value(), bh = height.value();
         Rect f = fittedRect();
         if (f.x > 0) mPanX -= f.x;
         if (f.x + f.w < bw) mPanX += bw - (f.x + f.w);
         if (f.y > 0) mPanY -= f.y;
         if (f.y + f.h < bh) mPanY += bh - (f.y + f.h);
-        if (mZoom == 1.0) { mPanX = 0; mPanY = 0; }
+    }
+
+    void ImageView::panBy(double dx, double dy)
+    {
+        if (mZoom == 1.0) return;
+        mPanX += dx;
+        mPanY += dy;
+        clampPan();
+    }
+
+    bool ImageView::handleGesture(const Gesture &g, const Point &local)
+    {
+        if (mZoom <= 1.0)
+            return Segment::handleGesture(g, local);
+        switch (g.type)
+        {
+        case Gesture::Type::Down:
+        case Gesture::Type::DragStart:
+            mDragLast = local;
+            return true;
+        case Gesture::Type::Drag:
+            panBy(local.x - mDragLast.x, local.y - mDragLast.y);
+            mDragLast = local;
+            return true;
+        case Gesture::Type::Up:
+        case Gesture::Type::Drop:
+            return true;
+        default:
+            return Segment::handleGesture(g, local);
+        }
     }
 
     void ImageView::onPaint(IRenderTarget &t) const

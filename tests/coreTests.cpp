@@ -1728,8 +1728,25 @@ TEST(ImageView_zoom_about_point)
     RecordingTarget t; v.render(t);
     CHECK(t.count(K::ClipRect) >= 1);
     CHECK(t.count(K::DrawImage) == 1);
+
+    // when zoomed, the view is interactive and a drag pans it
+    v.resetView();
+    v.zoomAbout(2.0, {50, 50});             // 2x about the centre -> fitted {-50,-50,200,200}
+    CHECK(v.hitTest({50, 50}));
+    const double panX0 = v.fittedRect().x;  // -50
+    v.onGesture({Gesture::Type::Down, {50, 50}, {50, 50}, PointerButton::Left});
+    v.onGesture({Gesture::Type::Drag, {70, 50}, {50, 50}, PointerButton::Left});  // drag right +20
+    Rect pf = v.fittedRect();
+    CHECK(pf.x > panX0 + 1.0);              // image panned right
+    CHECK(pf.x <= 1e-9 && pf.x + pf.w >= 100.0 - 1e-9);  // still covers the view
+
     v.resetView();
     CHECK_NEAR(v.zoom(), 1.0, 1e-9);
+    CHECK(!v.hitTest({50, 50}));            // display-only again at 1x
+    v.onGesture({Gesture::Type::Drag, {70, 50}, {50, 50}, PointerButton::Left});  // ignored at 1x
+    CHECK_NEAR(v.fittedRect().x, 0.0, 1e-9);
+    v.panBy(10, 0);                          // panBy is a no-op at 1x
+    CHECK_NEAR(v.fittedRect().x, 0.0, 1e-9);
 }
 
 int main() { return mini::runAll(); }
