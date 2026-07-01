@@ -34,6 +34,19 @@ namespace artboard
         return false;
     }
 
+    void ComboBox::advance(double nowMs)
+    {
+        mNowMs = nowMs;
+        mOpenAnim.update(nowMs);
+        Segment::advance(nowMs);
+    }
+
+    void ComboBox::setOpen(bool open)
+    {
+        mOpen = open; // logical state flips at once so rows stay hit-testable while revealing
+        mOpenAnim.animateTo(open ? 1.0 : 0.0, 160.0, Easing::EaseOutCubic, mNowMs);
+    }
+
     bool ComboBox::handleGesture(const Gesture &g, const Point &localPoint)
     {
         if (g.type != Gesture::Type::Click)
@@ -42,13 +55,13 @@ namespace artboard
         const double h = height.value();
         if (!mOpen)
         {
-            mOpen = true;
+            setOpen(true);
             raise();  // hit-tested first so dropdown clicks don't fall through to siblings
             return true;
         }
         if (localPoint.y <= h)
         {
-            mOpen = false;
+            setOpen(false);
             return true;
         }
         const int row = (int)((localPoint.y - h) / rowHeight);
@@ -58,7 +71,7 @@ namespace artboard
             if (onChange)
                 onChange(row);
         }
-        mOpen = false;
+        setOpen(false);
         return true;
     }
 
@@ -83,22 +96,36 @@ namespace artboard
 
     void ComboBox::onOverlay(IRenderTarget &t) const
     {
-        if (!mOpen)
+        // Reveal progress 0..1 (fade + slide); early-out once fully closed. Logical
+        // mOpen already governs hit-testing, so this is purely visual.
+        const double p = mOpenAnim.value();
+        if (p <= 1e-3)
             return;
         // Drawn in the overlay pass so it sits on top of every other control and is
         // never clipped by the owning panel. An opaque scrim under the popup hides
-        // whatever is behind it.
+        // whatever is behind it. The list fades in and slides down into place.
         const double w = width.value(), h = height.value();
         const double popupH = (double)mOptions.size() * rowHeight;
-        drawRoundedRect(t, Rect{-1, h - 1, w + 2, popupH + 2}, mStyle.popup.cornerRadius,
-                        Paint::filled(mStyle.field.paint.fill));  // opaque backing
-        drawRoundedRect(t, Rect{0, h, w, popupH}, mStyle.popup.cornerRadius, mStyle.popup.paint);
+        const double yoff = (1.0 - p) * -6.0;
+        auto fade = [p](Color c) { c.a *= p; return c; };
+
+        drawRoundedRect(t, Rect{-1, h - 1 + yoff, w + 2, popupH + 2}, mStyle.popup.cornerRadius,
+                        Paint::filled(fade(mStyle.field.paint.fill)));  // opaque backing
+        Paint pop = mStyle.popup.paint;
+        pop.fill = fade(pop.fill);
+        pop.stroke = fade(pop.stroke);
+        drawRoundedRect(t, Rect{0, h + yoff, w, popupH}, mStyle.popup.cornerRadius, pop);
         for (int i = 0; i < (int)mOptions.size(); ++i)
         {
-            const double ry = h + i * rowHeight;
+            const double ry = h + yoff + i * rowHeight;
             if (i == mSelected)
-                drawRoundedRect(t, Rect{0, ry, w, rowHeight}, mStyle.rowSelected.cornerRadius, mStyle.rowSelected.paint);
-            t.setFill(mStyle.text.color);
+            {
+                Paint sel = mStyle.rowSelected.paint;
+                sel.fill = fade(sel.fill);
+                sel.stroke = fade(sel.stroke);
+                drawRoundedRect(t, Rect{0, ry, w, rowHeight}, mStyle.rowSelected.cornerRadius, sel);
+            }
+            t.setFill(fade(mStyle.text.color));
             t.drawText(mOptions[i], 10.0, ry + rowHeight * 0.5 + mStyle.text.sizePx * 0.35, mStyle.text.sizePx);
         }
     }

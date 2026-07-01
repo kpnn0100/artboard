@@ -310,6 +310,85 @@ TEST(Animator_handle_chaining_covers_all_setters)
     CHECK(anim.activeCount() == 0);
 }
 
+TEST(Spring_converges_no_overshoot_and_reset)
+{
+    Spring s(0.0);
+    s.setTarget(1.0);
+    CHECK_NEAR(s.value(), 0.0, 1e-12);
+    CHECK(s.isMoving());
+    // monotone rise to the target, never overshooting (critically damped)
+    double prev = s.value(), maxV = 0.0;
+    for (int i = 0; i < 300; ++i)
+    {
+        double v = s.advance(0.016);
+        CHECK(v >= prev - 1e-9);
+        prev = v;
+        if (v > maxV) maxV = v;
+    }
+    CHECK_NEAR(s.value(), 1.0, 1e-3);   // settled
+    CHECK(maxV <= 1.0 + 1e-6);          // no overshoot past the target
+    CHECK(!s.isMoving());
+
+    // dt <= 0 is a no-op
+    const double held = s.value();
+    CHECK_NEAR(s.advance(0.0), held, 1e-12);
+    CHECK_NEAR(s.advance(-1.0), held, 1e-12);
+
+    // a long stall is clamped to 0.05s (still well-behaved, stays <= target)
+    s.reset(0.0);
+    s.setTarget(1.0);
+    double vClamped = s.advance(0.2);   // dt > 0.05 -> clamped
+    CHECK(vClamped > 0.0 && vClamped <= 1.0 + 1e-6);
+
+    // reset snaps value + target and clears velocity
+    s.reset(0.25);
+    CHECK_NEAR(s.value(), 0.25, 1e-12);
+    CHECK_NEAR(s.target(), 0.25, 1e-12);
+    CHECK_NEAR(s.velocity(), 0.0, 1e-12);
+    CHECK(!s.isMoving());
+}
+
+TEST(Spring_framerate_independent)
+{
+    // Closed-form step: reaching t=0.05s in one 0.05 step equals five 0.01 steps
+    // (same value AND velocity) — the smoothing does not depend on frame rate.
+    Spring coarse(0.0); coarse.setTarget(1.0);
+    coarse.advance(0.05);
+    Spring fine(0.0); fine.setTarget(1.0);
+    for (int i = 0; i < 5; ++i) fine.advance(0.01);
+    CHECK(coarse.value() > 0.0 && coarse.value() < 1.0); // genuinely mid-flight
+    CHECK_NEAR(coarse.value(), fine.value(), 1e-9);
+    CHECK_NEAR(coarse.velocity(), fine.velocity(), 1e-9);
+}
+
+TEST(ReducedMotion_switch_snaps_spring_and_tween)
+{
+    setReducedMotion(true);
+    CHECK(reducedMotion());
+
+    // Spring jumps straight to the target regardless of dt
+    Spring s(0.0); s.setTarget(1.0);
+    CHECK_NEAR(s.advance(0.001), 1.0, 1e-12);
+    CHECK(!s.isMoving());
+
+    // AnimatedProperty::animateTo snaps to the target, inactive
+    AnimatedProperty p(0.0);
+    p.animateTo(2.0, 300.0, Easing::EaseOutCubic, 0.0);
+    CHECK_NEAR(p.value(), 2.0, 1e-12);
+    CHECK(!p.isAnimating());
+
+    // AnimatedProperty::animate snaps to the tween's resting value + fires onComplete once
+    int done = 0;
+    AnimatedProperty q(0.0);
+    q.animate(Tween::range(0.0, 5.0, 400.0), 0.0, [&] { ++done; });
+    CHECK_NEAR(q.value(), 5.0, 1e-12);
+    CHECK(!q.isAnimating());
+    CHECK(done == 1);
+
+    setReducedMotion(false); // restore the global for the rest of the suite
+    CHECK(!reducedMotion());
+}
+
 // ───────────────────────── render + scene ─────────────────────────
 using K = DrawOp::Kind;
 
@@ -1055,6 +1134,7 @@ TEST(ComboBox_open_select_and_render)
 
     c->onGesture({Gesture::Type::Click, {10, 10}, {10, 10}, PointerButton::Left}); // open
     CHECK(c->isOpen());
+    for (double tt = 0.0; tt <= 200.0; tt += 16.0) c->advance(tt); // past the open reveal
     RecordingTarget open; c->render(open);       // main pass: field only (no rows)
     CHECK(open.count(K::DrawText) == 1);         // just the selected-option label
     RecordingTarget ov; c->renderOverlay(ov);    // overlay pass: the dropdown rows
@@ -1110,6 +1190,7 @@ TEST(ComboBox_overlay_on_top_and_raise)
     CHECK(combo->isOpen());
     CHECK(root->children().back().get() == combo.get());  // raised to front of input/z
 
+    for (double tt = 0.0; tt <= 200.0; tt += 16.0) root->advance(tt); // past the open reveal
     RecordingTarget ov; root->renderOverlay(ov);
     CHECK(ov.count(K::DrawText) >= 3);      // dropdown rows drawn on top
 
@@ -1117,6 +1198,65 @@ TEST(ComboBox_overlay_on_top_and_raise)
     root->onGesture({Gesture::Type::Click, {10, 46}, {10, 46}, PointerButton::Left});
     CHECK(picked == 0);
     CHECK(!sibClicked);
+}
+
+TEST(Knob_mod_ring_grow_in_and_reduced_motion)
+{
+    auto k = std::make_shared<Knob>();
+    k->setRange(0.0, 1.0); k->setValue(0.5);
+    k->advance(0.0); // seed the display spring (mLastMs)
+    k->addModulation(7, Color::rgba(0, 200, 255), 0.4);
+    CHECK_NEAR(k->modulations()[0].appear.value(), 0.0, 1e-9); // ring starts hidden
+    for (double tt = 16.0; tt <= 400.0; tt += 16.0) k->advance(tt);
+    CHECK_NEAR(k->modulations()[0].appear.value(), 1.0, 1e-2); // grew in to full
+    // re-colouring an already-routed source must NOT restart the grow-in
+    k->addModulation(7, Color::rgba(255, 0, 0), 0.4);
+    CHECK((int)k->modulations().size() == 1);
+    CHECK_NEAR(k->modulations()[0].appear.value(), 1.0, 1e-2);
+
+    // reduced motion: a new ring appears fully on the first advance (no grow-in)
+    setReducedMotion(true);
+    auto k2 = std::make_shared<Knob>();
+    k2->setRange(0.0, 1.0); k2->setValue(0.5);
+    k2->addModulation(1, Color::rgba(0, 255, 0), 0.5);
+    k2->advance(0.0);
+    CHECK_NEAR(k2->modulations()[0].appear.value(), 1.0, 1e-9);
+    setReducedMotion(false);
+}
+
+TEST(ComboBox_reveal_animation_and_reduced_motion)
+{
+    auto c = std::make_shared<ComboBox>();
+    c->setOptions({"A", "B", "C"});
+
+    // opening: the overlay is empty on the very first frame (progress ~0), then reveals
+    c->onGesture({Gesture::Type::Click, {5, 5}, {5, 5}, PointerButton::Left});
+    CHECK(c->isOpen());
+    RecordingTarget f0; c->renderOverlay(f0);
+    CHECK(f0.count(K::DrawText) == 0);       // reveal not advanced -> nothing drawn yet
+    c->advance(0.0); c->advance(80.0);       // mid-reveal
+    RecordingTarget mid; c->renderOverlay(mid);
+    CHECK(mid.count(K::DrawText) >= 3);       // rows now visible (faded/sliding in)
+    for (double tt = 96.0; tt <= 300.0; tt += 16.0) c->advance(tt);
+    RecordingTarget full; c->renderOverlay(full);
+    CHECK(full.count(K::DrawText) >= 3);
+
+    // closing animates out, then the overlay is empty
+    c->onGesture({Gesture::Type::Click, {5, 5}, {5, 5}, PointerButton::Left}); // field click closes
+    CHECK(!c->isOpen());
+    for (double tt = 320.0; tt <= 620.0; tt += 16.0) c->advance(tt);
+    RecordingTarget closed; c->renderOverlay(closed);
+    CHECK(closed.count(K::DrawText) == 0);    // fully closed -> nothing in the overlay
+
+    // reduced motion: opens fully immediately (no reveal frame)
+    setReducedMotion(true);
+    auto c2 = std::make_shared<ComboBox>();
+    c2->setOptions({"X", "Y"});
+    c2->onGesture({Gesture::Type::Click, {5, 5}, {5, 5}, PointerButton::Left});
+    c2->advance(0.0);
+    RecordingTarget r2; c2->renderOverlay(r2);
+    CHECK(r2.count(K::DrawText) >= 2);
+    setReducedMotion(false);
 }
 
 TEST(TabView_pages_and_tab_clicks)

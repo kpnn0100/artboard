@@ -38,15 +38,9 @@ namespace artboard
         }
         double dt = mLastMs < 0.0 ? 0.0 : (nowMs - mLastMs) / 1000.0;
         mLastMs = nowMs;
-        if (!mDisplayInit) { mDisplay = value(); mDisplayInit = true; }
-        if (dt > 0.0)
-        {
-            if (dt > 0.05) dt = 0.05;
-            const double omega = 18.0;  // critically-damped spring, ~0.2s settle (matches Knob)
-            const double acc = -2.0 * omega * mVel - omega * omega * (mDisplay - value());
-            mVel += acc * dt;
-            mDisplay += mVel * dt;
-        }
+        if (!mDisplayInit) { mDisplay.reset(value()); mDisplayInit = true; }
+        mDisplay.setTarget(value());
+        mDisplay.advance(dt); // shared critically-damped follower (~0.2s settle, matches Knob)
         Segment::advance(nowMs);
     }
 
@@ -75,10 +69,10 @@ namespace artboard
 
     double Slider::displayNormalized() const
     {
-        if (!mDisplayInit) { mDisplay = value(); mDisplayInit = true; }
+        if (!mDisplayInit) { mDisplay.reset(value()); mDisplayInit = true; }
         const double span = maximum() - minimum();
         if (span <= 0.0) return 0.0;
-        double n = (mDisplay - minimum()) / span;
+        double n = (mDisplay.value() - minimum()) / span;
         return n < 0.0 ? 0.0 : (n > 1.0 ? 1.0 : n);
     }
 

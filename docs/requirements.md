@@ -73,6 +73,22 @@ without binding the value to a `Segment` property. The application shall advance
 animations with one `advance(nowMs)` call per frame; finished animations shall be removed
 automatically. The `Animator` shall not embed any backend-specific timing or drawing code.
 
+### FR-4d Framerate-independent spring follower
+
+The framework shall provide a `Spring` — a critically-damped follower that advances a scalar toward
+a target by a real time delta (`advance(dtSeconds, omega)`) using a **closed-form** step, so the
+smoothing trajectory is framerate-independent (advancing one large step yields the same result as
+many small steps, within tolerance) and never overshoots. It replaces the ad-hoc per-frame Euler
+integrators previously hand-copied into individual controls (a single source of truth for display
+smoothing). A `Spring` shall have no backend or timing-source dependency.
+
+### FR-4e Reduced-motion switch
+
+The framework shall expose a global accessibility switch (`setReducedMotion(bool)` / `reducedMotion()`)
+that, when enabled, collapses **all** framework motion to instant: a `Spring` jumps to its target and
+an `AnimatedProperty` snaps to the tween's resting value (firing `onComplete`). This lets a host that
+detects a user "reduce motion" preference present final states with no animation. The default is off.
+
 ### FR-5 Shared focus groups
 
 The framework shall support focus groups so only one segment per focus index is focused at a time.
@@ -151,7 +167,10 @@ through the input + render HALs:
   selecting one closes it and emits `onChange(index)`. The open list is drawn in the **overlay
   pass** (`onOverlay`) over an opaque backing, so it sits on top of every other control and is
   never clipped by its owning panel; opening also `raise()`s the box so dropdown clicks are
-  hit-tested before sibling controls beneath the list.
+  hit-tested before sibling controls beneath the list. Opening and closing **animate** the list
+  (fade + short downward slide) via an `AnimatedProperty` advanced each frame; logical open state
+  (used for hit-testing) flips immediately so the list is clickable during the reveal. Honors the
+  reduced-motion switch (FR-4e).
 
 ### FR-OVERLAY Overlay render pass
 `Segment::renderOverlay()` is a second tree traversal the app runs on the root after
@@ -245,8 +264,11 @@ colour: a **unipolar** routing arcs from the base value to its reach (`base+dept
 ring **vertically to set its depth**; a press on the dial drags the value as before; a
 double-click on a ring **removes** that routing (a double-click on the dial still
 resets to default, FR-9a). `addModulation(id,colour)` adds a routing (or re-colours an
-existing one for that source). Assignment of a source to a target (drag-and-drop) is
-performed by the application, which then calls `addModulation`.
+existing one for that source). A **newly added** routing's ring **grows in** from zero
+depth (a `Spring`, FR-4d), so a freshly assigned modulation animates outward instead of
+appearing at full size; re-colouring an already-routed source does not re-animate. The
+grow-in honors the reduced-motion switch (FR-4e). Assignment of a source to a target
+(drag-and-drop) is performed by the application, which then calls `addModulation`.
 
 ### FR-19 Raster image primitive (register / draw) + ImageView
 

@@ -1,4 +1,5 @@
 #include "Animation.h"
+#include "Motion.h"
 #include <cmath>
 #include <limits>
 
@@ -56,16 +57,34 @@ namespace artboard
     {
         mTween = Tween(mValue, target, durationMs, 0.0, easing);
         mStart = nowMs;
-        mActive = true;
         mOnComplete = nullptr;
+        if (reducedMotion()) // FR-4e: skip the tween, land on the target immediately
+        {
+            mValue = target;
+            mActive = false;
+            return;
+        }
+        mActive = true;
     }
 
     void AnimatedProperty::animate(const Tween &spec, double nowMs, std::function<void()> onComplete)
     {
         mTween = spec;
         mStart = nowMs;
-        mActive = true;
         mOnComplete = std::move(onComplete);
+        if (reducedMotion()) // FR-4e: snap to the resting value and fire onComplete once
+        {
+            mValue = mTween.to;
+            mActive = false;
+            if (mOnComplete)
+            {
+                auto cb = mOnComplete;
+                mOnComplete = nullptr;
+                cb();
+            }
+            return;
+        }
+        mActive = true;
         mValue = mTween.at(0.0);
     }
 

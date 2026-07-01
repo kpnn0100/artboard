@@ -73,6 +73,13 @@ forcing all controls into one monolithic manager class.
   through an `onUpdate(value)` callback; one `advance(nowMs)` per frame ticks them all and drops
   finished tracks. It is the ergonomic "animate anything" entry point and depends only on
   `std::function` — no backend, no `Segment` coupling.
+- `Spring` is a critically-damped, **framerate-independent** display-smoothing follower
+  (`advance(dtSeconds, omega)` via a closed-form step). It is the single source of truth for the
+  "value glides to a target" motion that `Knob` and `Slider` (and app displays) previously each
+  hand-integrated with per-frame Euler.
+- `reducedMotion()` / `setReducedMotion(bool)` are a global accessibility switch consulted by
+  `Spring` and `AnimatedProperty`; when on, all motion collapses to instant. This keeps the
+  reduce-motion decision in one place instead of per-control conditionals.
 - `ui::Property` wraps `AnimatedProperty` for segment-level use.
 
 ### 3.3 `render`

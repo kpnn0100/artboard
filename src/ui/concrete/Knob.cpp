@@ -33,8 +33,9 @@ namespace artboard
     void Knob::addModulation(int sourceId, const Color &color, double depth, bool bipolar)
     {
         for (auto &m : mMods)
-            if (m.sourceId == sourceId) { m.color = color; m.bipolar = bipolar; return; } // re-route
+            if (m.sourceId == sourceId) { m.color = color; m.bipolar = bipolar; return; } // re-route (no re-animate)
         mMods.push_back(KnobMod{sourceId, clampPM1(depth), color, bipolar});
+        mMods.back().appear.setTarget(1.0); // grow the ring in from zero depth
     }
 
     void Knob::setModDepth(int sourceId, double depth)
@@ -73,10 +74,10 @@ namespace artboard
 
     double Knob::displayNormalized() const
     {
-        if (!mDisplayInit) { mDisplay = value(); mDisplayInit = true; }
+        if (!mDisplayInit) { mDisplay.reset(value()); mDisplayInit = true; }
         const double span = maximum() - minimum();
         if (span <= 0.0) return 0.0;
-        double n = (mDisplay - minimum()) / span;
+        double n = (mDisplay.value() - minimum()) / span;
         return n < 0.0 ? 0.0 : (n > 1.0 ? 1.0 : n);
     }
 
@@ -84,15 +85,11 @@ namespace artboard
     {
         double dt = mLastMs < 0.0 ? 0.0 : (nowMs - mLastMs) / 1000.0;
         mLastMs = nowMs;
-        if (!mDisplayInit) { mDisplay = value(); mDisplayInit = true; }
-        if (dt > 0.0)
-        {
-            if (dt > 0.05) dt = 0.05;
-            const double omega = 18.0; // critically-damped; ~0.2s settle, continuous velocity
-            const double acc = -2.0 * omega * mVel - omega * omega * (mDisplay - value());
-            mVel += acc * dt;
-            mDisplay += mVel * dt;
-        }
+        if (!mDisplayInit) { mDisplay.reset(value()); mDisplayInit = true; }
+        mDisplay.setTarget(value());
+        mDisplay.advance(dt); // shared critically-damped follower (~0.2s settle)
+        for (auto &m : mMods)
+            m.appear.advance(dt, 24.0); // ring grow-in, a touch snappier than the value
         Segment::advance(nowMs);
     }
 
@@ -156,16 +153,17 @@ namespace artboard
         for (size_t i = 0; i < mMods.size(); ++i)
         {
             const double rr = r + 4.0 + (double)i * 5.0;
+            const double appear = mMods[i].appear.value(); // grow-in factor [0,1]
             // unipolar: arc base→base+depth; bipolar (LFO): arc base±|depth| (both directions)
             double n0, n1;
             if (mMods[i].bipolar)
             {
-                const double d = mMods[i].depth < 0 ? -mMods[i].depth : mMods[i].depth;
+                const double d = (mMods[i].depth < 0 ? -mMods[i].depth : mMods[i].depth) * appear;
                 n0 = clamp01(norm - d); n1 = clamp01(norm + d);
             }
             else
             {
-                const double reach = clamp01(norm + mMods[i].depth);
+                const double reach = clamp01(norm + mMods[i].depth * appear);
                 n0 = norm < reach ? norm : reach; n1 = norm < reach ? reach : norm;
             }
             // depth arc from the base value to its reach, in the source colour

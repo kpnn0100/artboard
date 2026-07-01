@@ -7,6 +7,7 @@
 #include "../base/AbstractSlider.h"
 #include "../base/RectangleSegment.h"
 #include "../base/CircleSegment.h"
+#include "../../anim/Spring.h"
 #include <functional>
 
 namespace artboard
@@ -36,7 +37,7 @@ namespace artboard
         /** Eases the displayed thumb/fill toward the target value each frame. */
         void advance(double nowMs) override;
         /** The spring-smoothed displayed value (lags the target during the glide). */
-        double displayValue() const { if (!mDisplayInit) { mDisplay = value(); mDisplayInit = true; } return mDisplay; }
+        double displayValue() const { if (!mDisplayInit) { mDisplay.reset(value()); mDisplayInit = true; } return mDisplay.value(); }
 
     protected:
         void onPaint(IRenderTarget &t) const override;  // gradient track (when set)
@@ -54,11 +55,11 @@ namespace artboard
         mutable std::shared_ptr<RectangleSegment> mTrack;
         mutable std::shared_ptr<RectangleSegment> mRangeFill;
         mutable std::shared_ptr<CircleSegment> mThumb;
-        // Spring-smoothed display value (mirrors Knob): the thumb glides to the
-        // target instead of snapping. mutable so onPaint can seed it pre-advance.
-        mutable double mDisplay = 0.0;
+        // Spring-smoothed display value (shared follower, mirrors Knob): the thumb
+        // glides to the target instead of snapping. mutable so onPaint can seed it
+        // pre-advance.
+        mutable Spring mDisplay;
         mutable bool mDisplayInit = false;
-        double mVel = 0.0;
         double mLastMs = -1.0;
         bool mHasGradient = false;
         Color mGradLeft, mGradRight;

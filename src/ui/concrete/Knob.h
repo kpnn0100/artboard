@@ -6,6 +6,7 @@
 #include "../base/Theme.h"
 #include "../base/AbstractSlider.h"
 #include "../base/ModBus.h"
+#include "../../anim/Spring.h"
 #include <functional>
 #include <string>
 #include <vector>
@@ -20,6 +21,9 @@ namespace artboard
         double depth = 0.0; // [-1,1] of the full range
         Color color;
         bool bipolar = false; // true: source swings [-1,1] -> ring spans base ± |depth|
+        // Grow-in factor [0,1] scaling the drawn ring depth; a freshly added routing
+        // springs from 0 to 1 so the ring animates outward (FR-18). Default 0 (grows in).
+        Spring appear;
     };
 
     class Knob : public Segment, public AbstractSlider
@@ -64,11 +68,10 @@ namespace artboard
         double mDragStartValue = 0.0;
         int mDragRing = -1;          // mod index being depth-dragged, or -1 = value drag
         double mDragStartDepth = 0.0;
-        // Smoothed display value (spring toward the real value); mutable so onPaint can
-        // lazily seed it before the first advance().
-        mutable double mDisplay = 0.0;
+        // Smoothed display value (shared Spring follower toward the real value); mutable
+        // so onPaint can lazily seed it before the first advance().
+        mutable Spring mDisplay;
         mutable bool mDisplayInit = false;
-        double mVel = 0.0;
         double mLastMs = -1.0;
         std::vector<KnobMod> mMods;
         const ModBus *mBus = nullptr;

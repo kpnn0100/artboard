@@ -76,6 +76,9 @@ Holds a live scalar, an optional active `Tween`, and a start timestamp.
 - `animate(tween, nowMs, onComplete)` — full control via a `Tween`; fires `onComplete` once when the
   (finite) tween finishes.
 - `update(nowMs)` — recompute the value from the tween; deactivate + fire `onComplete` at the end.
+- Reduced-motion (FR-4e): when `reducedMotion()` is set, `animateTo`/`animate` skip the tween and
+  snap `value` to the resting target (the tween's `to`), leaving the property inactive and firing
+  `onComplete` immediately.
 
 ## 2d. `anim::Animator`
 
@@ -92,6 +95,32 @@ A callback-based timeline that lets an application animate **any** value without
 - `clear()` drops all tracks; `activeCount()` reports the live track count.
 - Depends only on `Tween` + `std::function`; SRP (timing/dispatch only), OCP (new behavior via
   callbacks not new core branches), DIP (no backend, no UI coupling).
+
+## 2c-i. `anim::Spring` (framerate-independent follower)
+
+A critically-damped follower for *display smoothing* (a value that should glide to a target rather
+than snap). Fields: `value`, `target`, `velocity`.
+
+### Operations
+
+- `reset(v)` — snap value and target to `v`, zero velocity.
+- `setTarget(t)` / `target()` / `value()` / `velocity()`.
+- `advance(dtSeconds, omega)` — step the value toward the target. Uses the **closed-form**
+  critically-damped solution `y(t) = (y0 + (v0 + ω·y0)·t)·e^(−ω·t)` (with `y = value − target`), so
+  the trajectory is identical whether advanced in one big step or many small ones (framerate
+  independence, FR-4d). `dt` is clamped to `0.05s` to bound a long stall; `omega` (rad/s) sets the
+  settle speed (`18` ≈ 0.2s, the previous hand-tuned constant). Critically damped ⇒ no overshoot.
+- `isMoving(eps)` — value/velocity still meaningfully away from the target.
+
+Replaces the per-frame semi-implicit Euler blocks previously duplicated in `Knob` and `Slider`
+(one source of truth). When `reducedMotion()` is set, `advance` jumps straight to the target.
+
+## 2c-ii. `anim::reducedMotion` (accessibility switch)
+
+Free functions `setReducedMotion(bool)` / `reducedMotion()` backed by a single translation-unit
+flag (default off, FR-4e). `Spring::advance` and `AnimatedProperty::animateTo`/`animate` consult it;
+when on, springs jump to target and tweens snap to their resting value and fire `onComplete`, so all
+framework motion collapses to instant with no per-control special-casing.
 
 ## 2e. `Segment` snap constraint
 
@@ -209,6 +238,8 @@ types without creating a deep inheritance chain.
 ### Behavior
 
 - Pointer down, drag, and click convert local x-position into a slider value.
+- `advance(nowMs)` springs the *displayed* thumb/fill toward the value via a shared `anim::Spring`
+  (FR-4d, `omega≈18`, same follower as `Knob`); `displayValue()` exposes the smoothed value.
 - Left and right arrow keys decrement or increment the value.
 - Each of these (and the double-click reset) fires `onChange(value())` with the resulting
   value; a programmatic `setValue()` does **not** fire `onChange` (so syncing controls to
@@ -358,15 +389,19 @@ inline helper in `base/InputController.h`.
 
 - Extends `Segment` + `AbstractSlider`. `sensitivity` px maps vertical drag to value delta;
   `Left`/`Right` keys step. Fires `onChange(value)`.
-- `advance(nowMs)` springs a smoothed *display* value (critically damped) toward the real value,
-  so the dial moves smoothly when the value changes; `onPaint` draws from the smoothed value.
+- `advance(nowMs)` springs a smoothed *display* value toward the real value via a shared
+  `anim::Spring` (FR-4d, `omega≈18`), so the dial moves smoothly when the value changes; `onPaint`
+  draws from the smoothed value.
 - `onPaint` draws the dial, a 270° arc track (sampled), a value arc up to the value, and the
   indicator line — which reaches the **outer edge of the value arc** (arc radius + ½ arc width).
   Optional `label`.
 - **Modulation (FR-18).** Holds `std::vector<KnobMod>` (`{sourceId, depth∈[-1,1], color}`) and a
   `const ModBus*`. `modulatedValue()` = `clamp(base + Σ depthᵢ·bus.value(sourceᵢ)·range)`. `onPaint`
   draws one concentric ring per routing (radius `r+4+i·5`): a depth arc from the base to `base+depth`
-  in the source colour plus a live dot at the modulated value. `handleGesture` picks the drag mode by
+  in the source colour plus a live dot at the modulated value. Each `KnobMod` owns an `anim::Spring
+  appear` (target `1`); a newly added routing starts at `0` and grows in over `advance` (FR-18), and
+  `onPaint` scales the drawn depth by `appear.value()`; re-colouring an existing source keeps its
+  ring at full. `handleGesture` picks the drag mode by
   press radius — `ringAtRadius()` selects a ring band (vertical drag → `setModDepth`) else the dial
   (value drag); double-click on a ring erases that routing, on the dial resets to default.
 - `ModBus` (in `ui/base/`) maps `sourceId → value`; sources publish with `set`, targets read with
@@ -374,8 +409,9 @@ inline helper in `base/InputController.h`.
 
 ### 12.2 `ToggleSwitch`
 
-- Boolean `on()`. `Click`/confirm toggles, animates `mThumb` (`AnimatedProperty`) toward 0/1,
-  fires `onChange(bool)`. `advance(nowMs)` ticks the thumb.
+- Boolean `on()`. `Click`/confirm toggles, animates `mThumb` (`AnimatedProperty`, `EaseOutCubic`
+  160ms) toward 0/1, fires `onChange(bool)`. `advance(nowMs)` ticks the thumb. Reduced-motion
+  (FR-4e) is honored automatically via `AnimatedProperty`.
 - `onPaint` draws the rounded track (color lerps with thumb position) and the moving thumb.
 
 ### 12.3 `ProgressBar`
@@ -385,9 +421,13 @@ inline helper in `base/InputController.h`.
 
 ### 12.4 `ComboBox`
 
-- `options`, `selectedIndex`, `isOpen`. `Click` on the field toggles open; when open,
-  `ensureRows()` creates one child `Segment` per option below the field; clicking a row selects it,
-  closes the popup, and fires `onChange(index)`. Rows are removed when closed.
+- `options`, `selectedIndex`, `isOpen`. `Click` on the field toggles open; when open, clicking a
+  row selects it, closes the popup, and fires `onChange(index)`. The list is drawn in `onOverlay`.
+- `advance(nowMs)` stamps the current time and ticks an `AnimatedProperty mOpenAnim` (0 closed → 1
+  open, `EaseOutCubic` 160ms), started on open/close via the stamped time (mirrors `ToggleSwitch`).
+  Logical `mOpen` flips immediately so rows are hit-testable during the reveal; the *visual* list
+  fades in and slides down by `(1−p)·6px`. `onOverlay` early-outs when `p≈0`. Honors reduced-motion
+  (FR-4e) through `AnimatedProperty`.
 - `onPaint` draws the field, the selected text, and a caret glyph.
 
 ### 12.5 `TabView`

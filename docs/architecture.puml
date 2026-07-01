@@ -17,10 +17,20 @@ package anim {
   class Tween
   class AnimatedProperty
   class Animator
+  class Spring {
+    + advance(dtSeconds, omega)
+    + setTarget(t) / reset(v)
+  }
+  class ReducedMotion <<(F,#88c) free fns>> {
+    + setReducedMotion(bool)
+    + reducedMotion() : bool
+  }
   Animation ..> Easing
   Tween ..> Easing
   AnimatedProperty *--> Tween
   Animator *--> Tween
+  Spring ..> ReducedMotion
+  AnimatedProperty ..> ReducedMotion
 }
 
 package render {
@@ -126,6 +136,9 @@ package ui {
   Knob --|> Segment
   Knob --|> AbstractSlider
   Knob ..> ModBus
+  Knob ..> Spring
+  Slider ..> Spring
+  ComboBox ..> AnimatedProperty
   ToggleSwitch --|> Segment
   ProgressBar --|> Segment
   ComboBox --|> Segment

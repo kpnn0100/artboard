@@ -4,6 +4,7 @@
 #pragma once
 #include "../base/Segment.h"
 #include "../base/Theme.h"
+#include "../../anim/Animation.h"
 #include <functional>
 #include <string>
 #include <vector>
@@ -25,6 +26,9 @@ namespace artboard
         bool isOpen() const { return mOpen; }
         void setStyle(const ComboStyle &style) { mStyle = style; }
 
+        /** Ticks the open/close reveal animation (fade + slide). */
+        void advance(double nowMs) override;
+
     protected:
         void onPaint(IRenderTarget &t) const override;
         void onOverlay(IRenderTarget &t) const override;  // dropdown, drawn on top
@@ -32,9 +36,12 @@ namespace artboard
         bool handleGesture(const Gesture &g, const Point &localPoint) override;
 
     private:
+        void setOpen(bool open); // flip logical state + start the reveal/close animation
         ComboStyle mStyle;
         std::vector<std::string> mOptions;
         int mSelected = 0;
-        bool mOpen = false;
+        bool mOpen = false;              // logical state (drives hit-testing immediately)
+        AnimatedProperty mOpenAnim;      // visual reveal 0..1 (fade + slide)
+        double mNowMs = 0.0;             // last advance() time, stamped for open/close
     };
 }
