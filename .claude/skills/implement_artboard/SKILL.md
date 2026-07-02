@@ -112,6 +112,29 @@ protected:
 Rules: emit only `IRenderTarget` primitives in `onDraw`; never call OS/canvas APIs from a
 drawable or control; reuse `Paint`/`applyPaint`/`Theme` rather than duplicating paint logic.
 
+### Layout: snap, don't stack (default)
+Sibling elements — labels, rows, cells, nodes, controls — **must snap to each other** (align
+edge-to-edge or into a shared grid/column) so nothing lands on top of anything else.
+**Overlap is a bug unless it is intentional.** The only elements allowed to sit over others are
+**deliberate overlays** — modals, dropdowns, popups, tooltips, drag ghosts — the things drawn in
+the second `renderOverlay`/`onOverlay` pass. Everything drawn in the normal `onDraw`/`onPaint`
+pass is laid out so its bounds don't intersect a sibling's.
+
+Concretely, when you position N things:
+- Give each item its own slot. If two items can share a coordinate (e.g. two tree nodes at the
+  same depth, two labels on the same baseline), that shared axis is **not** a valid layout key —
+  switch to one that is unique per item (a per-item row/index, a running offset, a measured
+  advance) so no two ever coincide. Fixed columns are fine **only** when the cross-axis is
+  already unique per item.
+- Derive each position from the previous item's extent (snap: `next = prev.edge + gap`) or from a
+  grid, not from a value that can collide. Prefer the existing snap constraint (`Segment::snapTo`,
+  `SnapEdge`) over hand-computed coordinates when gluing one segment's edge to another's.
+- If you genuinely intend to stack (a badge on an avatar, an overlay scrim), say so in a comment
+  and make sure it is drawn in the overlay pass or explicitly z-ordered — never rely on accidental
+  draw order.
+- Cover it in the `RecordingTarget` test: assert the recorded op positions do **not** collide
+  (e.g. every row/label baseline is distinct; adjacent cells don't overlap).
+
 ## 3. Platform-independence rule (non-negotiable)
 
 **Order of preference for any new capability:**
@@ -166,6 +189,9 @@ the source of truth, the conformance reference, and the floor every adapter must
       the cost on the adapter / core-software side; software path is the reference.
 - [ ] `./build/artboard_tests` reports `0 failed`; touched core sources at 100% line coverage.
 - [ ] SOLID respected (new behavior = new type; `IRenderTarget` stayed minimal).
+- [ ] Layout snaps, doesn't stack: sibling elements align/don't overlap; any overlap is an
+      intentional overlay (modal/dropdown/tooltip drawn in the overlay pass) and is commented,
+      with a test asserting recorded positions don't collide.
 - [ ] Branding stays `artboard`/`arstro`.
 - [ ] **Committed** — the implemented + tested feature is committed (one focused commit per
       feature, every touched repo), not left in the working tree.
