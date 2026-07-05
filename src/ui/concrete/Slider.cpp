@@ -169,10 +169,23 @@ namespace artboard
         mTrack->width.set(width.value());
         mTrack->height.set(trackHeight);
 
+        // When the range spans zero, anchor the fill at the zero-crossing instead of
+        // the left edge -- it then reads as "distance from neutral" (grows right for
+        // positive values, left for negative) rather than "distance from minimum". A
+        // range that doesn't span zero (e.g. 0..100) keeps filling from the left edge.
+        double fillFrom = 0.0;
+        if (minimum() < 0.0 && maximum() > 0.0)
+        {
+            const double span = maximum() - minimum();
+            fillFrom = span > 0.0 ? (0.0 - minimum()) / span : 0.0;
+        }
+        const double fillLo = fillFrom < normalized ? fillFrom : normalized;
+        const double fillHi = fillFrom < normalized ? normalized : fillFrom;
+
         mRangeFill->style = mStyle.rangeFill;
-        mRangeFill->x.set(0.0);
+        mRangeFill->x.set(width.value() * fillLo);
         mRangeFill->y.set(trackY);
-        mRangeFill->width.set(width.value() * normalized);
+        mRangeFill->width.set(width.value() * (fillHi - fillLo));
         mRangeFill->height.set(trackHeight);
 
         mThumb->style = mStyle.thumb;
