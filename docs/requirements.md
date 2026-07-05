@@ -120,7 +120,11 @@ The framework shall provide baseline implementations for:
   to the new position instead of snapping, while `onChange` still reports the final value.
   `setTrackGradient(left,right)` renders the track as a horizontal gradient (e.g. a temperature
   blue->yellow ramp) instead of the solid track + accent fill, so the slider previews what each
-  end of the range looks like; the thumb still marks the position.
+  end of the range looks like; the thumb still marks the position. When the range spans zero
+  (`minimum() < 0 < maximum()`), the range fill is anchored at the zero-crossing instead of the
+  left edge -- it grows right for positive values and left for negative ones, so the fill reads
+  as *distance from neutral* rather than *distance from the minimum*. A range that doesn't span
+  zero (e.g. `0..100`) fills from the left edge, unchanged.
 - `Checkbox`
 - `TextBox`
 
@@ -323,6 +327,36 @@ as a filmstrip.
 active tab is full height and extends past the tab strip (the page, drawn on top, covers the
 overhang), while inactive tabs are recessed (shorter, inset). The page sits directly under the
 strip (no gap). The result reads as one connected surface for the selected section.
+
+`TabStyle` may additionally carry an **active-tab indicator**: a thin bar of
+`activeIndicatorColor` drawn across the top edge of the active tab only, `activeIndicatorHeight`
+tall. Default height is `0` (no indicator drawn), so existing themes are unaffected until they
+opt in. `TabStyle::labelActive` colours the active tab's title separately from `label` (the idle
+title colour); it defaults to a copy of `label` so an uncustomized theme reads identically.
+
+### FR-22 Text font family and letter-spacing
+
+`IRenderTarget::drawText` shall accept an optional **font family** name and an optional
+**letter-spacing** (extra advance between glyphs, in px). Both default to the framework's
+prior behavior (empty family = adapter's generic sans; `0` spacing = normal tracking), so
+every existing 4-argument call site is unaffected.
+
+- **Font family** selects a family name the adapter's own text stack resolves — Fontconfig on
+  the native (Cairo) adapter, the CSS font stack on the web (Canvas2D) adapter. The HAL does
+  **not** load font files itself (out of scope: that is host/adapter bootstrap, e.g. an app
+  registering its own bundled fonts via Fontconfig before creating its window). A distinct
+  **static weight** (Medium, SemiBold, ...) is selected by passing *that weight's own family
+  name* (e.g. `"DM Sans Medium"`), not a separate weight enum — real static weights are
+  distinct font files/family names at the OS text-stack level, and Cairo's built-in weight
+  enum only distinguishes two values, so a numeric weight parameter would not reliably select
+  the intended glyphs anyway.
+- **Letter-spacing** adds `letterSpacingPx` of extra advance after every glyph (uppercase
+  "tracking" is a common request for small section-header labels). An adapter with no native
+  tracking support falls back to drawing glyph-by-glyph with manual advance.
+- `ui::TextStyle` (and the `scene::Text` drawable) carry the same two fields so `LabelSegment`
+  and any control built on a `TextStyle` (`Button`, `Checkbox`, `TextBox`, `TabView`,
+  `ComboBox`, `Knob`, ...) can opt into a themed family/tracking without every control
+  re-deriving its own text-drawing code.
 
 ## 4. Non-functional Requirements
 

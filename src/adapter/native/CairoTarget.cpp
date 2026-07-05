@@ -1,4 +1,5 @@
 #include "CairoTarget.h"
+#include <algorithm>
 
 namespace artboard
 {
@@ -106,12 +107,49 @@ namespace artboard
         cairo_stroke_preserve(mContext);
     }
 
-    void CairoTarget::drawText(const std::string &text, double x, double y, double sizePx)
+    namespace
     {
-        cairo_select_font_face(mContext, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+        // One UTF-8 codepoint's byte length from its leading byte (1 on a malformed/
+        // continuation byte, so iteration always advances).
+        size_t utf8SeqLen(unsigned char lead)
+        {
+            if ((lead & 0x80) == 0x00) return 1;
+            if ((lead & 0xE0) == 0xC0) return 2;
+            if ((lead & 0xF0) == 0xE0) return 3;
+            if ((lead & 0xF8) == 0xF0) return 4;
+            return 1;
+        }
+    }
+
+    void CairoTarget::drawText(const std::string &text, double x, double y, double sizePx,
+                                const std::string &fontFamily, double letterSpacingPx)
+    {
+        cairo_select_font_face(mContext, fontFamily.empty() ? "Sans" : fontFamily.c_str(),
+                                CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
         cairo_set_font_size(mContext, sizePx);
-        cairo_move_to(mContext, x, y);
-        cairo_show_text(mContext, text.c_str());
+
+        if (letterSpacingPx == 0.0)
+        {
+            cairo_move_to(mContext, x, y);
+            cairo_show_text(mContext, text.c_str());
+            return;
+        }
+
+        // Extra tracking can't be expressed by one cairo_show_text call, so advance
+        // glyph-by-glyph (UTF-8 codepoint aware) adding letterSpacingPx after each one.
+        double cx = x;
+        for (size_t i = 0; i < text.size();)
+        {
+            size_t len = utf8SeqLen(static_cast<unsigned char>(text[i]));
+            len = std::min(len, text.size() - i);
+            std::string glyph = text.substr(i, len);
+            cairo_move_to(mContext, cx, y);
+            cairo_show_text(mContext, glyph.c_str());
+            cairo_text_extents_t extents;
+            cairo_text_extents(mContext, glyph.c_str(), &extents);
+            cx += extents.x_advance + letterSpacingPx;
+            i += len;
+        }
     }
 
     CairoTarget::~CairoTarget()

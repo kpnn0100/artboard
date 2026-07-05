@@ -82,7 +82,8 @@ namespace artboard
 
         t.setFill(mStyle.text.color);
         const std::string &sel = mOptions.empty() ? std::string() : mOptions[mSelected];
-        t.drawText(sel, 10.0, h * 0.5 + mStyle.text.sizePx * 0.35, mStyle.text.sizePx);
+        t.drawText(sel, 10.0, h * 0.5 + mStyle.text.sizePx * 0.35, mStyle.text.sizePx,
+                   mStyle.text.fontFamily, mStyle.text.letterSpacingPx);
 
         // caret triangle
         t.beginPath();
@@ -126,7 +127,8 @@ namespace artboard
                 drawRoundedRect(t, Rect{0, ry, w, rowHeight}, mStyle.rowSelected.cornerRadius, sel);
             }
             t.setFill(fade(mStyle.text.color));
-            t.drawText(mOptions[i], 10.0, ry + rowHeight * 0.5 + mStyle.text.sizePx * 0.35, mStyle.text.sizePx);
+            t.drawText(mOptions[i], 10.0, ry + rowHeight * 0.5 + mStyle.text.sizePx * 0.35, mStyle.text.sizePx,
+                       mStyle.text.fontFamily, mStyle.text.letterSpacingPx);
         }
     }
 }

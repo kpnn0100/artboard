@@ -26,6 +26,8 @@ namespace artboard
         double width = 0;
         Transform transform;
         std::string text;
+        std::string fontFamily;     // DrawText: requested font family ("" = adapter default)
+        double letterSpacingPx = 0; // DrawText: extra advance between glyphs (0 = normal)
         // raster image ops
         int imageId = 0;            // assigned id (register) or target id (update/draw/release)
         int imgW = 0, imgH = 0;     // register/update dimensions
@@ -51,7 +53,8 @@ namespace artboard
         void closePath() override;
         void fillPath() override;
         void strokePath() override;
-        void drawText(const std::string &text, double x, double y, double sizePx) override;
+        void drawText(const std::string &text, double x, double y, double sizePx,
+                      const std::string &fontFamily = "", double letterSpacingPx = 0.0) override;
         int registerImage(const uint8_t *rgba, int w, int h) override;
         void updateImage(int id, const uint8_t *rgba, int w, int h) override;
         void drawImage(int id, const Rect &dst) override;

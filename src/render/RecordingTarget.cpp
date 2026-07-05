@@ -76,11 +76,14 @@ namespace artboard
     void RecordingTarget::closePath() { mOps.push_back({K::ClosePath}); }
     void RecordingTarget::fillPath() { mOps.push_back({K::FillPath}); }
     void RecordingTarget::strokePath() { mOps.push_back({K::StrokePath}); }
-    void RecordingTarget::drawText(const std::string &text, double x, double y, double sizePx)
+    void RecordingTarget::drawText(const std::string &text, double x, double y, double sizePx,
+                                    const std::string &fontFamily, double letterSpacingPx)
     {
         DrawOp op{K::DrawText};
         op.args[0] = x; op.args[1] = y; op.args[2] = sizePx;
         op.text = text;
+        op.fontFamily = fontFamily;
+        op.letterSpacingPx = letterSpacingPx;
         mOps.push_back(op);
     }
 

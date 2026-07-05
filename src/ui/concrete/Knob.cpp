@@ -186,7 +186,8 @@ namespace artboard
         {
             t.setFill(mStyle.label.color);
             t.drawText(label, cx - label.size() * mStyle.label.sizePx * 0.3,
-                       height.value() - 2.0, mStyle.label.sizePx);
+                       height.value() - 2.0, mStyle.label.sizePx,
+                       mStyle.label.fontFamily, mStyle.label.letterSpacingPx);
         }
     }
 

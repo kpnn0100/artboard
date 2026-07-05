@@ -5,6 +5,6 @@ namespace artboard
     void LabelSegment::onPaint(IRenderTarget &t) const
     {
         t.setFill(style.color);
-        t.drawText(text, 0.0, style.sizePx, style.sizePx);
+        t.drawText(text, 0.0, style.sizePx, style.sizePx, style.fontFamily, style.letterSpacingPx);
     }
 }

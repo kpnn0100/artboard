@@ -124,6 +124,8 @@ namespace artboard
         Point position;
         double sizePx = 16.0;
         Color color;
+        std::string fontFamily;      // "" = adapter default (generic sans)
+        double letterSpacingPx = 0.0;
         Text() = default;
         Text(std::string s, const Point &pos, double size, const Color &c)
             : text(std::move(s)), position(pos), sizePx(size), color(c) {}

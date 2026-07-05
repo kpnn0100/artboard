@@ -116,6 +116,17 @@ forcing all controls into one monolithic manager class.
   identical everywhere. Pixel format is fixed straight RGBA8 top-down; Canvas2D's `ImageData` matches
   it directly, Cairo converts to premultiplied BGRA honoring its stride, and `RecordingTarget` records
   id/dimensions/draw-rect (+ a pixel hash to prove an update changed the bytes).
+- `IRenderTarget::drawText(text, x, y, sizePx, fontFamily="", letterSpacingPx=0)` carries two
+  optional parameters beyond the original three: a font family name (resolved by the adapter's
+  own text stack — Fontconfig on native, the CSS font stack on web — never loaded by the HAL
+  itself) and extra per-glyph advance for tracking. Both default to the prior behavior, so this
+  is a backward-compatible widening of an existing primitive, not a new one: a font family
+  string cannot be composed from the existing path/fill/stroke primitives (glyph outlines are
+  adapter/OS text-stack territory), so it stays a parameter on the one text primitive rather
+  than a new HAL method. `RecordingTarget` records both fields; `CairoTarget` selects the
+  family via `cairo_select_font_face` and, when tracking is non-zero, advances glyph-by-glyph
+  (UTF-8 aware) using `cairo_text_extents`; `Canvas2DTarget` builds a quoted CSS `font` string
+  and sets `ctx.letterSpacing` where supported.
 - `RecordingTarget` records draw operations for tests and inspection.
 
 ### 3.4 `input`
@@ -239,7 +250,9 @@ keeps the seam minimal (a target needs only `value(id)`).
 
 ## 6. Known Architectural Gaps
 
-- No text measurement service yet, so text box / combo / graph text placement is approximate.
+- No text measurement service yet, so text box / combo / graph text placement is approximate
+  (this remains true even with FR-22's family/letter-spacing support — selecting a family does
+  not report its metrics back to the caller).
 - No constraint/flow layout containers yet, so sizing and placement remain explicit at the
   segment level (widgets size themselves but are positioned by the app).
 - Clipping is rectangular only (no arbitrary path clip / soft masks yet).

@@ -54,7 +54,15 @@ namespace artboard
         virtual void strokePath() = 0;
 
         // ---- text (cannot be a path without a font; stays a primitive) ----
-        virtual void drawText(const std::string &text, double x, double y, double sizePx) = 0;
+        // fontFamily selects a family name the adapter's text stack resolves (Fontconfig on
+        // native, the CSS font stack on web); empty keeps each adapter's generic default. A
+        // distinct static weight (Medium, SemiBold, ...) is selected by passing that weight's
+        // own family name -- not a separate weight enum -- since real static weights are
+        // distinct font files/families, and Cairo's weight enum only has two values anyway.
+        // letterSpacingPx adds extra advance between glyphs (0 = normal tracking); an adapter
+        // that can't set it natively falls back to manual glyph-by-glyph advance.
+        virtual void drawText(const std::string &text, double x, double y, double sizePx,
+                               const std::string &fontFamily = "", double letterSpacingPx = 0.0) = 0;
 
         // ---- raster images (handle/registration model) ----
         // A raster image is a primitive: no path/fill/text combination reproduces a

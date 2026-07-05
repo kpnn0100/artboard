@@ -154,6 +154,6 @@ namespace artboard
     void Text::onDraw(IRenderTarget &t) const
     {
         t.setFill(color);
-        t.drawText(text, position.x, position.y, sizePx);
+        t.drawText(text, position.x, position.y, sizePx, fontFamily, letterSpacingPx);
     }
 }

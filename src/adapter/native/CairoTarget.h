@@ -33,7 +33,8 @@ namespace artboard
         void closePath() override;
         void fillPath() override;
         void strokePath() override;
-        void drawText(const std::string &text, double x, double y, double sizePx) override;
+        void drawText(const std::string &text, double x, double y, double sizePx,
+                      const std::string &fontFamily = "", double letterSpacingPx = 0.0) override;
         int registerImage(const uint8_t *rgba, int w, int h) override;
         void updateImage(int id, const uint8_t *rgba, int w, int h) override;
         void drawImage(int id, const Rect &dst) override;

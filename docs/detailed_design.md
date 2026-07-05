@@ -253,6 +253,9 @@ types without creating a deep inheritance chain.
 
 1. Ensure the internal child tree exists.
 2. Synchronize child geometry from current segment bounds and slider value.
+   `mRangeFill`'s span is anchored at the zero-crossing (`clamp(0, minimum(), maximum())`
+   normalized) when the range spans zero, so it grows from neutral rather than from the
+   left edge; otherwise it fills from the left edge as always.
 3. Render the segment tree.
 
 ## 8. `Button`
@@ -374,6 +377,44 @@ types without creating a deep inheritance chain.
   → `clipRect(localBounds)` → … → `restore()` bracket, so the clip applies to the whole subtree
   and is released afterwards.
 
+## 11d. Text font family + letter-spacing
+
+### HAL
+
+- `IRenderTarget::drawText(text, x, y, sizePx, fontFamily = "", letterSpacingPx = 0.0)` — the
+  two new trailing parameters default to the prior behavior, so every existing 4-argument call
+  site is source- and binary-compatible (only `RecordingTarget`, `CairoTarget`, and
+  `Canvas2DTarget` implement `IRenderTarget` and needed updating; every other call site in the
+  codebase only *calls* `drawText`).
+- `RecordingTarget` records `DrawOp::fontFamily` (string) and `DrawOp::letterSpacingPx`
+  (double) alongside the existing `text`/`args[0..2]` (x, y, sizePx).
+- `CairoTarget`: `cairo_select_font_face(family.empty() ? "Sans" : family, NORMAL, NORMAL)`.
+  When `letterSpacingPx == 0`, one `cairo_show_text` call (fast path, unchanged from before).
+  When non-zero, iterates the UTF-8 string one codepoint at a time (`utf8SeqLen`, an anonymous-
+  namespace helper reading the leading byte's high bits), drawing each codepoint with
+  `cairo_show_text` and stepping the pen by `cairo_text_extents(...).x_advance +
+  letterSpacingPx`.
+- `Canvas2DTarget`: builds `ctx.font = "<sizePx>px \"<family>\", sans-serif"` (or plain
+  `sans-serif` when `family` is empty) and sets `ctx.letterSpacing = "<letterSpacingPx>px"`
+  when the browser supports the property (`'letterSpacing' in ctx`).
+- Rationale: font-family resolution is inherently adapter/OS text-stack territory (glyph
+  outlines cannot be composed from `beginPath`/`fillPath`), so it stays a parameter on the
+  existing text primitive. It does not load font files — an application that wants a custom
+  bundled font registers it with the OS font system itself (e.g. `FcConfigAppFontAddFile` on
+  Linux) before the family name is passed in; the HAL only asks the adapter's text stack to
+  resolve whatever name it's given.
+
+### Propagation to `ui::TextStyle`
+
+- `TextStyle` (`ui/base/Theme.h`) gained `fontFamily`/`letterSpacingPx` fields alongside
+  `color`/`sizePx`. `LabelSegment::onPaint` forwards them to `drawText`, so `Button`,
+  `Checkbox`, and `TextBox` (all label via `LabelSegment`) pick up a themed family/tracking for
+  free. `TabView`, `ComboBox`, and `Knob` draw their own text directly (not through
+  `LabelSegment`) and were each updated to forward their relevant `TextStyle`'s two new fields
+  to their `drawText` call.
+- `scene::Text` (the freeform drawable) gained the same two fields for parity with `TextStyle`,
+  forwarded in `Text::onDraw`.
+
 ## 12. Extended widgets (`ui/concrete/`)
 
 File layout: the `ui` module is one class per file, split into `ui/base/` (foundations +
@@ -438,6 +479,9 @@ inline helper in `base/InputController.h`.
   no gap). **Unification (FR-21):** `onPaint` draws inactive tabs recessed (started a few px down,
   shorter) and the active tab full-height extending `tabHeight+10` downward, drawn last; the page
   (rendered after `onPaint`) covers the overhang, so the active tab merges into the content.
+  If `TabStyle::activeIndicatorHeight > 0`, a filled bar of `activeIndicatorColor` is drawn across
+  the top edge of the active tab only, on top of its body fill. Title colour comes from
+  `labelActive` for the selected tab and `label` for the rest.
 
 ### 12.6 `ScrollView`
 
@@ -490,3 +534,7 @@ inline helper in `base/InputController.h`.
   (`ui/concrete/ImageView`).
 - FR-12 maps to `Knob`, `ToggleSwitch`, `ProgressBar`, `ComboBox`, `TabView`, `ScrollView`, and
   `LineGraph`, one class per file under `ui/concrete/`.
+- FR-22 maps to `IRenderTarget::drawText`'s `fontFamily`/`letterSpacingPx` parameters,
+  `RecordingTarget` (`DrawOp::fontFamily`/`DrawOp::letterSpacingPx`), the Canvas2D / Cairo
+  adapters, and `ui::TextStyle` + `scene::Text` (propagated through `LabelSegment`, `TabView`,
+  `ComboBox`, and `Knob`).

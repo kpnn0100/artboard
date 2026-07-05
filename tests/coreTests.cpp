@@ -1,6 +1,9 @@
 #include "MiniTest.h"
 #include "../include/artboard/artboard.h"
+#include <algorithm>
 #include <cmath>
+#include <utility>
+#include <vector>
 
 using namespace artboard;
 
@@ -541,6 +544,69 @@ TEST(Text_uses_fill_and_drawText)
     for (const auto &op : t.ops())
         if (op.kind == K::DrawText) drawn = op.text;
     CHECK(drawn == "hi");
+}
+
+TEST(DrawText_font_family_and_letter_spacing_default_to_prior_behavior)
+{
+    RecordingTarget t;
+    t.drawText("plain", 1, 2, 10); // old 4-arg call site: must still compile and record defaults
+    CHECK(t.ops().size() == 1);
+    CHECK(t.ops()[0].fontFamily.empty());
+    CHECK_NEAR(t.ops()[0].letterSpacingPx, 0.0, 1e-9);
+}
+
+TEST(DrawText_font_family_and_letter_spacing_are_recorded)
+{
+    RecordingTarget t;
+    t.drawText("tracked", 3, 4, 12, "DM Sans Medium", 1.5);
+    CHECK(t.ops().size() == 1);
+    const auto &op = t.ops()[0];
+    CHECK(op.kind == K::DrawText);
+    CHECK(op.text == "tracked");
+    CHECK(op.fontFamily == "DM Sans Medium");
+    CHECK_NEAR(op.letterSpacingPx, 1.5, 1e-9);
+}
+
+TEST(Text_drawable_forwards_font_family_and_letter_spacing)
+{
+    // Drawable::render() appends Save/SetTransform/.../Restore around onDraw(), so
+    // the DrawText op is not necessarily last -- find it by kind (as
+    // Text_uses_fill_and_drawText above does), don't assume ops().back().
+    RecordingTarget t;
+    Text txt("hi", Point{4, 8}, 16, Color::rgba(255, 255, 255));
+    txt.fontFamily = "JetBrains Mono";
+    txt.letterSpacingPx = 0.5;
+    txt.render(t);
+    CHECK(t.count(K::DrawText) == 1);
+    const DrawOp *drawTextOp = nullptr;
+    for (const auto &op : t.ops())
+        if (op.kind == K::DrawText) drawTextOp = &op;
+    CHECK(drawTextOp != nullptr);
+    if (drawTextOp)
+    {
+        CHECK(drawTextOp->fontFamily == "JetBrains Mono");
+        CHECK_NEAR(drawTextOp->letterSpacingPx, 0.5, 1e-9);
+    }
+}
+
+TEST(LabelSegment_forwards_text_style_font_family_and_letter_spacing)
+{
+    RecordingTarget t;
+    LabelSegment label;
+    label.text = "SECTION";
+    label.style.fontFamily = "DM Sans SemiBold";
+    label.style.letterSpacingPx = 1.2;
+    label.render(t);
+    CHECK(t.count(K::DrawText) == 1);
+    const DrawOp *drawTextOp = nullptr;
+    for (const auto &op : t.ops())
+        if (op.kind == K::DrawText) drawTextOp = &op;
+    CHECK(drawTextOp != nullptr);
+    if (drawTextOp)
+    {
+        CHECK(drawTextOp->fontFamily == "DM Sans SemiBold");
+        CHECK_NEAR(drawTextOp->letterSpacingPx, 1.2, 1e-9);
+    }
 }
 
 TEST(Drawable_visibility)
@@ -1287,6 +1353,45 @@ TEST(TabView_pages_and_tab_clicks)
     RecordingTarget e; empty->render(e);                         // n==0 onPaint return
     empty->onGesture({Gesture::Type::Click, {10, 10}, {10, 10}, PointerButton::Left}); // n==0 guard
 }
+
+TEST(TabView_active_indicator_bar)
+{
+    // FR-21: activeIndicatorHeight opts into a thin top bar on the active tab only;
+    // the default (0) draws nothing extra, so existing themes are unaffected.
+    TabStyle style;
+    style.tabIdle = {Paint::filled(Color::rgba(40, 40, 40)), 4.0};
+    style.tabActive = {Paint::filled(Color::rgba(80, 80, 80)), 4.0};
+    style.label = {Color::rgba(255, 255, 255), 12.0};
+
+    auto tv = std::make_shared<TabView>(style);
+    tv->addPage("One", std::make_shared<RectangleSegment>());
+    tv->addPage("Two", std::make_shared<RectangleSegment>());
+
+    RecordingTarget plain; tv->render(plain);
+    CHECK(plain.count(K::FillPath) == 2);  // just the two tab bodies -- no indicator by default
+
+    style.activeIndicatorColor = Color::rgba(79, 126, 247);
+    style.activeIndicatorHeight = 2.0;
+    tv->setStyle(style);
+
+    RecordingTarget withBar; tv->render(withBar);
+    CHECK(withBar.count(K::FillPath) == 3);  // + one indicator bar, on the active tab only
+
+    // the active tab's title is coloured via labelActive, not label
+    style.label = {Color::rgba(150, 150, 150), 12.0};
+    style.labelActive = {Color::rgba(79, 126, 247), 12.0};
+    tv->setStyle(style);
+    RecordingTarget colored; tv->render(colored);
+    bool sawIdleColor = false, sawActiveColor = false;
+    for (const auto &op : colored.ops())
+    {
+        if (op.kind != K::SetFill) continue;
+        if (op.color == style.label.color) sawIdleColor = true;
+        if (op.color == style.labelActive.color) sawActiveColor = true;
+    }
+    CHECK(sawIdleColor && sawActiveColor);
+}
+
 TEST(ScrollView_clip_drag_and_thumb)
 {
     auto sv = std::make_shared<ScrollView>();
@@ -1564,6 +1669,89 @@ TEST(Slider_clickJumps_off)
     // double-click reliably resets to the default
     sl->onGesture({Gesture::Type::DoubleClick, {150, 14}, {150, 14}, PointerButton::Left});
     CHECK_NEAR(sl->value(), 0.2, 1e-9);
+}
+
+namespace
+{
+    // The world-space x-span [lo,hi] of the 3rd rect segment rendered by a Slider
+    // (track, then rangeFill, then the thumb circle) -- rangeFill's cornerRadius
+    // must be 0 (a plain rect) so its path is exactly 4 corners with clean x's.
+    std::pair<double, double> rangeFillXSpan(const std::vector<DrawOp> &ops)
+    {
+        std::vector<size_t> transforms;
+        for (size_t i = 0; i < ops.size(); ++i)
+            if (ops[i].kind == K::SetTransform) transforms.push_back(i);
+        if (transforms.size() < 3) return {0.0, 0.0};
+        const size_t start = transforms[2];
+        const size_t end = transforms.size() > 3 ? transforms[3] : ops.size();
+        const double worldX = ops[start].transform.e;
+        double lo = 1e18, hi = -1e18;
+        for (size_t i = start; i < end; ++i)
+        {
+            if (ops[i].kind == K::MoveTo || ops[i].kind == K::LineTo)
+            {
+                lo = std::min(lo, ops[i].args[0]);
+                hi = std::max(hi, ops[i].args[0]);
+            }
+        }
+        return {worldX + lo, worldX + hi};
+    }
+}
+
+TEST(Slider_range_fill_anchors_at_zero_when_range_spans_it)
+{
+    // FR-8: a range spanning zero fills from the zero-crossing, not the left edge, so
+    // the bar reads as "distance from neutral" for e.g. a -100..100 exposure slider.
+    SliderStyle style = Theme::basicTheme().slider;
+    style.rangeFill.cornerRadius = 0.0;  // plain rect -> unambiguous path x's
+
+    auto sl = std::make_shared<Slider>(style);
+    sl->width.set(200.0);
+    sl->setRange(-100.0, 100.0);
+
+    // The rendered fill follows the spring-smoothed DISPLAY value (FR-9a), not the
+    // target directly -- advance well past the settle time after each setValue so
+    // the display has actually caught up before checking the rendered span.
+    double now = 0.0;
+    auto settle = [&] { for (int i = 0; i < 40; ++i) { now += 20.0; sl->advance(now); } };
+
+    sl->setValue(0.0);
+    settle();
+    RecordingTarget t0; sl->render(t0);
+    auto [lo0, hi0] = rangeFillXSpan(t0.ops());
+    CHECK_NEAR(lo0, 100.0, 1.0);  // no width yet: anchored exactly at the zero-crossing (50%)
+    CHECK_NEAR(hi0, 100.0, 1.0);
+
+    sl->setValue(50.0);          // normalized 0.75 -> x=150; fills right, from the anchor
+    settle();
+    RecordingTarget tp; sl->render(tp);
+    auto [loP, hiP] = rangeFillXSpan(tp.ops());
+    CHECK_NEAR(loP, 100.0, 1.0);
+    CHECK_NEAR(hiP, 150.0, 1.0);
+
+    sl->setValue(-50.0);         // normalized 0.25 -> x=50; fills left, up to the anchor
+    settle();
+    RecordingTarget tn; sl->render(tn);
+    auto [loN, hiN] = rangeFillXSpan(tn.ops());
+    CHECK_NEAR(loN, 50.0, 1.0);
+    CHECK_NEAR(hiN, 100.0, 1.0);
+}
+
+TEST(Slider_range_fill_still_left_anchored_when_range_excludes_zero)
+{
+    // A range that doesn't span zero (e.g. 0..100) keeps the classic left-edge fill.
+    SliderStyle style = Theme::basicTheme().slider;
+    style.rangeFill.cornerRadius = 0.0;
+
+    auto sl = std::make_shared<Slider>(style);
+    sl->width.set(200.0);
+    sl->setRange(0.0, 100.0);
+    sl->setValue(50.0);
+
+    RecordingTarget t; sl->render(t);
+    auto [lo, hi] = rangeFillXSpan(t.ops());
+    CHECK_NEAR(lo, 0.0, 1e-6);
+    CHECK_NEAR(hi, 100.0, 1.0);
 }
 
 TEST(AbstractSlider_clamp_reversed_range)

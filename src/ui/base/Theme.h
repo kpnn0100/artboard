@@ -13,6 +13,8 @@ namespace artboard
     {
         Color color = Color::rgba(244, 244, 244);
         double sizePx = 14.0;
+        std::string fontFamily;      // "" = adapter default (generic sans)
+        double letterSpacingPx = 0.0;
     };
 
     struct SliderStyle
@@ -83,6 +85,11 @@ namespace artboard
         BoxStyle tabIdle;
         BoxStyle tabActive;
         TextStyle label;
+        TextStyle labelActive = label;  // active tab's title colour (size unused; label's applies)
+        // Optional thin bar across the top edge of the active tab only (0 height =
+        // none, the default, so existing themes are unaffected until they opt in).
+        Color activeIndicatorColor = Color::rgba(0, 0, 0, 0);
+        double activeIndicatorHeight = 0.0;
     };
 
     struct ScrollStyle
@@ -169,6 +176,7 @@ namespace artboard
             theme.tab.tabIdle = {Paint::filledStroked(surface, outline, 1.0), 8.0};
             theme.tab.tabActive = {Paint::filledStroked(accent, outline, 1.0), 8.0};
             theme.tab.label = {ink, 13.0};
+            theme.tab.labelActive = {ink, 13.0};
 
             theme.scroll.viewport = {Paint::filledStroked(canvas, outline, 1.0), 8.0};
             theme.scroll.track = {Paint::filled(surface), 4.0};

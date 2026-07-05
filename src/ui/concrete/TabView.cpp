@@ -56,8 +56,13 @@ namespace artboard
             const double y = active ? 0.0 : 4.0;
             const double hh = active ? tabHeight + 10.0 : tabHeight - 4.0;
             drawRoundedRect(t, Rect{i * tw + 1.0, y, tw - 2.0, hh}, bs.cornerRadius, bs.paint);
-            t.setFill(mStyle.label.color);
-            t.drawText(mTitles[i], i * tw + 10.0, tabHeight * 0.5 + mStyle.label.sizePx * 0.35, mStyle.label.sizePx);
+            if (active && mStyle.activeIndicatorHeight > 0.0)
+                drawRoundedRect(t, Rect{i * tw + 1.0, 0.0, tw - 2.0, mStyle.activeIndicatorHeight}, 0.0,
+                                Paint::filled(mStyle.activeIndicatorColor));
+            const TextStyle &ls = active ? mStyle.labelActive : mStyle.label;
+            t.setFill(ls.color);
+            t.drawText(mTitles[i], i * tw + 10.0, tabHeight * 0.5 + mStyle.label.sizePx * 0.35, mStyle.label.sizePx,
+                       ls.fontFamily, ls.letterSpacingPx);
         };
         for (int i = 0; i < n; ++i)
             if (i != mSelected)
