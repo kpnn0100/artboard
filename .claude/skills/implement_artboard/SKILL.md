@@ -49,9 +49,17 @@ Left side = specify & design (top→down). Right side = build & verify (bottom�
 stage validates the same-level left stage. **Do not start a stage until the left-side artifact
 above it is updated.**
 
-1. **REQUIREMENTS FIRST.** Open `docs/requirements.md`. State the change's contract: what the
-   feature is, inputs/params (with units & ranges), expected visual/behavioral result, and
-   what "correct" means. If the requirement doesn't exist, **add it before any code.**
+1. **REQUIREMENTS FIRST — read, then write, then check for conflict.** Open
+   `docs/requirements.md` and **actually read it before doing anything else** — every agent
+   working on this repo must load the same requirements first, so that everyone acknowledges
+   and builds against the *same single source of truth*. Then state the change's contract: what
+   the feature is, inputs/params (with units & ranges), expected visual/behavioral result, and
+   what "correct" means. If the requirement doesn't exist, **write it before any code.**
+   **Before you implement, check the new/changed requirement against the existing ones for
+   conflict** (contradictory behavior, overlapping ownership, a rule that breaks an already-
+   stated one). If it conflicts, resolve the conflict in `requirements.md` first — do not write
+   code against a contradiction. No stage below starts until the requirement is written,
+   conflict-checked, and read.
 2. **ARCHITECTURE.** Update `docs/architecture.md` (and `design.md` for design intent) if the
    change adds/moves a module, a drawable, a control, or — critically — **touches the
    `IRenderTarget` / input HAL seam**. A seam change is an architecture change; document why
@@ -73,12 +81,14 @@ above it is updated.**
    (§3): web via `./build.sh --target linux-web-server` from `arstro/`; native (Cairo) via the
    relevant target. The `RecordingTarget` is updated and tested in step 5.
 8. **SYNC CHECK (§5).** If any artifact lags, the task is not done.
-9. **COMMIT.** Once tests pass (`0 failed`, coverage met) and docs/puml/tests are in sync,
-   **commit the change** before moving on — one focused commit per implemented+tested feature,
-   in every repo it touched (Artboard, and the umbrella with its submodule bump). Do not batch
-   several features into one commit, and do not leave verified work uncommitted. Use the
-   project's commit identity and end the message with the `Co-Authored-By` trailer. Push only
-   when asked (or when the user has set up push access).
+9. **COMMIT — to `main`, always.** Once tests pass (`0 failed`, coverage met) and
+   docs/puml/tests are in sync, **commit the change directly to the `main` branch** before
+   moving on. Every implementation in this project is committed to `main` — do **not** open a
+   side/feature branch, and do not leave verified work uncommitted. One focused commit per
+   implemented+tested feature, in every repo it touched (Artboard, and the umbrella with its
+   submodule bump); do not batch several features into one commit. Use the project's commit
+   identity and end the message with the `Co-Authored-By` trailer. Push only when asked (or when
+   the user has set up push access).
 
 ## 2. SOLID (how to add code)
 
@@ -142,6 +152,16 @@ transferable rules from the `design-taste-frontend` skill, adapted for this nati
 its web stack (Tailwind / React / Motion / design-system packages / web fonts) does **not** apply
 here; the taste does. Apply them to any new or changed control, panel, or app screen.
 
+- **Everything animates — nothing snaps (mandatory).** All movement and change in the UI must be
+  smoothly animated. **No component may suddenly change size, appear, disappear, move, recolor, or
+  reflow in a single frame.** Every property that affects what the user sees — position, size,
+  opacity/visibility (fade, don't pop), color, corner radius, scroll/zoom offset, panel
+  open/close, list insert/remove — MUST change its value through an animation primitive
+  (`AnimatedProperty` / `Property` / `Spring`), never by direct assignment of the visible value.
+  Show/hide is a fade or size tween to/from zero, not a `visible` flip; layout changes ease into
+  their new coordinates. The only exception is `artboard::reducedMotion()`, which collapses each
+  of these to its final state instantly (below). If you cannot drive an animation in the available
+  scope, that is a reason to fix the driving loop — not to snap the value.
 - **Motion must be motivated.** Every animation states *why* in one sentence: hierarchy (draw the
   eye), feedback (acknowledge a press), state transition (show what changed), or reveal (sequence
   content in). "It looked cool" is not a reason; no idle/looping motion on informational elements.
@@ -222,7 +242,13 @@ the source of truth, the conformance reference, and the floor every adapter must
 
 ## 5. Definition of done — the sync checklist
 
-- [ ] `docs/requirements.md` states the feature's contract (added if it was missing).
+- [ ] `docs/requirements.md` was **read first**, states the feature's contract (added if it was
+      missing), and the new/changed requirement was **checked against the existing ones for
+      conflict** (conflicts resolved in `requirements.md` before any code).
+- [ ] **Everything animates, nothing snaps:** every visible property change (position, size,
+      show/hide via fade, color, radius, scroll/zoom, panel open/close, list insert/remove) goes
+      through an animation primitive — no single-frame size change / pop-in / pop-out / jump — and
+      collapses to the final state only under `reducedMotion()`.
 - [ ] `docs/architecture.md` + `docs/design.md` reflect any module/seam change.
 - [ ] `docs/detailed_design.md` + `docs/architecture.puml` match the code (classes, params,
       relationships) — no code class without a puml box.
@@ -242,8 +268,9 @@ the source of truth, the conformance reference, and the floor every adapter must
       `Theme` (consistency locks); text/fills legible (contrast); empty & loading states drawn
       (children default hidden/positioned before first data), not just the happy path.
 - [ ] Branding stays `artboard`/`arstro`.
-- [ ] **Committed** — the implemented + tested feature is committed (one focused commit per
-      feature, every touched repo), not left in the working tree.
+- [ ] **Committed to `main`** — the implemented + tested feature is committed directly to the
+      `main` branch (one focused commit per feature, every touched repo; no side branch), not
+      left in the working tree.
 
 If you changed code but not the docs/puml/tests (or extended the HAL but not every adapter),
 or you left a verified feature uncommitted, you are **not done**.
