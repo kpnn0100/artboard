@@ -98,6 +98,11 @@ package ui {
   class Column
   class AbstractSlider
   class ModBus
+  class "Observable<T>" as Observable {
+    + get() : T
+    + set(value)  ' notifies only when it changes
+    + observe(fn, fireNow=true)  ' state link; fireNow initialises in sync
+  }
   class Slider {
     + onChange : (value)
     + setClickJumps(bool)

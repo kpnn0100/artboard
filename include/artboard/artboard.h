@@ -26,6 +26,7 @@
 #include "../../src/ui/base/Segment.h"
 #include "../../src/ui/base/AbstractSlider.h"
 #include "../../src/ui/base/ModBus.h"
+#include "../../src/ui/base/Observable.h"
 #include "../../src/ui/base/RectangleSegment.h"
 #include "../../src/ui/base/CircleSegment.h"
 #include "../../src/ui/base/LabelSegment.h"

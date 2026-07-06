@@ -2077,4 +2077,48 @@ TEST(ImageView_zoom_about_point)
     CHECK_NEAR(v.fittedRect().x, 0.0, 1e-9);
 }
 
+// ───────────────────────── ui/base/Observable ─────────────────────────
+TEST(Observable_default_and_set_notifies_only_on_change)
+{
+    Observable<int> d;                        // default ctor -> value-initialised
+    CHECK(d.get() == 0);
+
+    Observable<int> s(1);
+    int fires = 0, last = -1;
+    s.observe([&](const int &v) { ++fires; last = v; }, /*fireNow*/ false);
+    s.set(1);                                 // same value -> no notify
+    CHECK(fires == 0);
+    s.set(5);                                 // changed -> notify observers
+    CHECK(fires == 1);
+    CHECK(last == 5);
+    CHECK(s.get() == 5);
+}
+
+TEST(Observable_observe_fires_now_and_links_views)
+{
+    // Two views bound to one boolean state (a toggle button's `active` and the
+    // panel it shows) stay in sync -- the state-link use case that prevents the
+    // "button highlighted but panel hidden" class of bug.
+    Observable<bool> railOpen(true);
+    bool buttonActive = false, panelVisible = false;
+    railOpen.observe([&](const bool &v) { buttonActive = v; });   // fireNow -> initialise in sync
+    railOpen.observe([&](const bool &v) { panelVisible = v; });
+    CHECK(buttonActive == true);              // both initialised from the current value
+    CHECK(panelVisible == true);
+    CHECK(railOpen.observerCount() == 2);
+    railOpen.set(false);                      // one flip updates every observer
+    CHECK(buttonActive == false);
+    CHECK(panelVisible == false);
+}
+
+TEST(Observable_null_observer_ignored)
+{
+    Observable<int> s(0);
+    s.observe(nullptr);                       // null -> ignored, no crash, does not fire
+    s.observe(Observable<int>::Observer{}, false);
+    CHECK(s.observerCount() == 0);
+    s.set(3);                                 // no observers -> still fine
+    CHECK(s.get() == 3);
+}
+
 int main() { return mini::runAll(); }

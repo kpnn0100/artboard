@@ -358,6 +358,24 @@ every existing 4-argument call site is unaffected.
   `ComboBox`, `Knob`, ...) can opt into a themed family/tracking without every control
   re-deriving its own text-drawing code.
 
+### FR-23 Observable state link
+
+`ui::Observable<T>` shall hold one value and notify registered observers when it changes, so
+several UI nodes can bind to ONE source of truth instead of each caching its own copy of a
+shared state (the class of bug where a toggle button's highlight and the panel it controls
+disagree — e.g. the rail is open but its toggle isn't highlighted).
+
+- `get()` returns the current value; `set(v)` replaces it and, **only if the value actually
+  changed**, notifies every observer in registration order. Setting the current value is a
+  no-op, so two observers that write back into the same `Observable` cannot recurse forever.
+- `observe(fn, fireNow = true)` registers an observer; by default it fires immediately with
+  the current value so the view initialises IN SYNC (fixing start-up drift). A null observer
+  is ignored (never stored, never called), so `set()` never has to guard for one.
+- Platform-free and drawing-free: it is a value plus a list of callbacks — no HAL, no OS. It
+  sits beside `Property` (an animated scalar) and `ModBus` (a modulation-value bus) as the
+  third small state primitive in `ui/base`; the framework provides the primitive, callers wire
+  which fields (a button's `active`, a panel's `visible`/target width) observe it.
+
 ## 4. Non-functional Requirements
 
 ### NFR-1 Platform independence

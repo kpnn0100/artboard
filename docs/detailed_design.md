@@ -38,6 +38,22 @@
 - Start an animation toward a target value (simple `animateTo`, or a full `Tween`).
 - Advance the value at a supplied time.
 
+## 2b0. `ui::Observable<T>` (FR-23)
+
+A single-source-of-truth value with change notification — the state-link primitive. Header-only
+(`ui/base/Observable.h`); a `T mValue` plus a `std::vector<std::function<void(const T&)>>` of
+observers.
+
+### Responsibilities
+
+- `get()` returns the current value; `set(v)` replaces it and notifies every observer **only when
+  the value changed** (equality-guarded, so mutually-bound observers can't recurse).
+- `observe(fn, fireNow = true)` registers an observer, firing it immediately by default so the
+  view initialises in sync; a null `fn` is rejected (never stored), so `set()` needs no null guard.
+- No drawing, no HAL — it is pure state. Callers decide which fields observe it (a button's
+  `active`, a panel's `visible`/target width), giving one authoritative value instead of N copies
+  that can disagree. Sits beside `Property` and `ModBus` as the third `ui/base` state primitive.
+
 ## 2a. `anim::Easing` / `applyEasing`
 
 A library of easing curves as a pure function `applyEasing(Easing, t)` with `t` clamped to `[0,1]`.

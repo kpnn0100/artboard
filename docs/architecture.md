@@ -157,6 +157,9 @@ The `ui` module is split by role into two folders, **one class per file** for ma
   - `Theme` (all concrete visual style structs + the baseline theme),
   - `AbstractSlider` (ranged value/behavior with no visual concerns),
   - `ModBus` (the live modulation-source value bus: source id → value, read by targets),
+  - `Observable<T>` (a single-source-of-truth value with change notification: several UI nodes
+    bind one value via `observe()` so a toggle button and the panel it controls can't drift out
+    of sync — FR-23),
   - `RectangleSegment`, `CircleSegment`, `LabelSegment` (reusable visual nodes).
 - **`ui/concrete/`** — the finished, themed controls, each its own file:
   - baseline: `Button`, `Slider`, `Checkbox`, `TextBox`,
