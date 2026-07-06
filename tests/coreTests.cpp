@@ -1582,6 +1582,32 @@ TEST(Slider_double_click_resets_despite_click_jumps)
     CHECK(maxSeen <= 0.25 + 1e-9);         // the cursor value (1.0) never fired -> no flash/re-render
 }
 
+TEST(Slider_slow_double_click_no_flash_toward_cursor)
+{
+    // A SLOW double-click (near the recognizer's 300ms window) with frames ticking
+    // between the two clicks: the deferred click-jump must NOT commit before the
+    // second click cancels it (guard >= double-click window), so the value never
+    // flashes toward the cursor and ends at the default. Regression for guard 240 <
+    // window 300, where the jump committed mid-double-click.
+    auto root = std::make_shared<Segment>();
+    root->width.set(200); root->height.set(40);
+    auto sl = std::make_shared<Slider>();  // width 160, range 0..1
+    sl->setValue(0.1); sl->setDefault(0.25);
+    double maxSeen = 0.0; sl->onChange = [&](double v) { if (v > maxSeen) maxSeen = v; };
+    root->addChild(sl);
+    GestureRecognizer rec; rec.setSink([&](const Gesture &g) { root->onGesture(g); });
+    double now = 0; auto adv = [&](double to) { while (now < to) { now += 16; root->advance(now); } };
+    rec.feed({RawPointer::Kind::Down, {160, 14}, PB::Left, 0});
+    rec.feed({RawPointer::Kind::Up,   {160, 14}, PB::Left, 10});   // Click (deferred)
+    adv(280);                                                      // frames tick; guard must NOT fire yet
+    CHECK(sl->value() < 0.9);                                      // no early commit toward the cursor (1.0)
+    rec.feed({RawPointer::Kind::Down, {160, 14}, PB::Left, 280});  // 2nd press cancels the pending jump
+    rec.feed({RawPointer::Kind::Up,   {160, 14}, PB::Left, 290});  // DoubleClick -> reset
+    adv(1600);
+    CHECK_NEAR(sl->value(), 0.25, 1e-9);   // ends at the default
+    CHECK(maxSeen <= 0.25 + 1e-9);          // never flashed to the cursor value
+}
+
 TEST(Slider_onChange_fires_on_interaction)
 {
     auto sl = std::make_shared<Slider>();  // width 160, range 0..1

@@ -264,6 +264,12 @@ types without creating a deep inheritance chain.
   `Down`/`Click` is captured (returns true so the following drag is delivered) but does not
   jump the value to the cursor. This keeps a double-click from being preceded by a value-
   changing click, so `DoubleClick` reliably resets to default (FR-6/FR-9a).
+- With `clickJumps` on, a `Click` records a **pending** jump (`mPendingClick`, `mPendingValue`)
+  rather than moving the value; `advance()` commits it once `nowMs - mPendingSince >=
+  mClickGuardMs`. `mClickGuardMs` (300ms) is set `>=` the recognizer's double-click window so
+  the jump can't commit between the two clicks of a slow double-click. The pending jump is
+  cleared by a `DoubleClick` (which then resets to default) **and** by the next `Down` (the
+  second click's press), so the reset is flash-free at any double-click speed.
 
 ### Rendering sequence
 

@@ -112,10 +112,13 @@ The framework shall provide baseline implementations for:
   `onChange(value)` (only on user interaction, never on a programmatic `setValue`), matching
   `Knob`. Double-click resets to default (FR-9a). `setClickJumps(false)` makes the value change
   **only on drag** (a bare press/click no longer jumps to the cursor); the default is `true`
-  (a click jumps to the cursor). A click-to-position jump is **deferred** by a short
-  double-click guard (~240ms, committed in `advance()`); a double-click within that window
-  cancels the pending jump and resets to default, so a double-click never flashes the value to
-  the cursor first. Dragging sets the value immediately. Like `Knob`, the Slider's **displayed**
+  (a click jumps to the cursor). A click-to-position jump is **deferred** and committed in
+  `advance()` only after a guard elapses; the guard MUST be **>= the GestureRecognizer
+  double-click window** (default 300ms) so the jump cannot commit between the two clicks of a
+  slow double-click. Both the double-click itself AND the next press (the second click's Down)
+  cancel the pending jump, so a double-click resets to default cleanly and never flashes the
+  value toward the cursor first, at any double-click speed. Dragging sets the value immediately.
+  Like `Knob`, the Slider's **displayed**
   thumb/fill is a spring-smoothed follower of the real value (FR-9a), so a click or reset glides
   to the new position instead of snapping, while `onChange` still reports the final value.
   `setTrackGradient(left,right)` renders the track as a horizontal gradient (e.g. a temperature

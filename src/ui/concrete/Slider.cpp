@@ -105,7 +105,13 @@ namespace artboard
             return true;
         }
         if (g.type == Gesture::Type::Down)
+        {
+            // A new press cancels a still-deferred click-jump from the PREVIOUS
+            // press — i.e. the second click of a double-click drops the first
+            // click's pending jump before it can commit, so the reset stays clean.
+            mPendingClick = false;
             return true;  // capture the press so a following drag is delivered here
+        }
         return Segment::handleGesture(g, localPoint);
     }
 

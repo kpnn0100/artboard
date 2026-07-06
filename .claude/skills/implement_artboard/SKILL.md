@@ -168,6 +168,14 @@ here; the taste does. Apply them to any new or changed control, panel, or app sc
   them hidden/positioned for the empty state.
 - **Anti-slop.** Reach past the obvious default: align to a grid, respect whitespace, keep labels
   terse and real, and don't stack decorative dividers/dots or duplicate the same affordance twice.
+- **A deferred action must outlast the gesture that would cancel it.** If a control defers an
+  action so a later gesture can pre-empt it (e.g. a click-to-jump deferred so a double-click can
+  reset instead), the defer window must be `>=` the window of the cancelling gesture (the
+  GestureRecognizer double-click window, default 300ms) — a shorter guard lets the action fire
+  between the two clicks and flash the wrong state. Also cancel the pending action on the next
+  press (the second click's `Down`), so the outcome is clean regardless of exact timing. Assert
+  it with a slow-gesture test that ticks `advance()` between the two clicks (see
+  `Slider_slow_double_click_no_flash_toward_cursor`).
 - **Prove it with `RecordingTarget`.** Where practical, assert the motion/state in a test: sample
   an `AnimatedProperty` at t = 0 / mid / end, or assert the op stream differs between states — the
   same way §4 proves layout.

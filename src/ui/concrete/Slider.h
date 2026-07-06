@@ -63,11 +63,16 @@ namespace artboard
         double mLastMs = -1.0;
         bool mHasGradient = false;
         Color mGradLeft, mGradRight;
-        // A click-to-position jump is deferred briefly so a double-click (reset) can
-        // cancel it before it commits — no jump-to-cursor flash on double-click.
+        // A click-to-position jump is deferred so a double-click (reset) can cancel
+        // it before it commits — no jump-to-cursor flash on double-click. The guard
+        // MUST be >= the GestureRecognizer double-click window (default 300ms): a
+        // shorter guard lets the jump commit between the two clicks of a slow
+        // double-click, flashing the thumb toward the cursor before the reset. It is
+        // also cancelled by the next press (the second click's Down), so the reset
+        // stays clean regardless of exact timing.
         bool mPendingClick = false;
         double mPendingValue = 0.0;
         double mPendingSince = -1.0;
-        double mClickGuardMs = 240.0;
+        double mClickGuardMs = 300.0;
     };
 }
