@@ -135,6 +135,43 @@ Concretely, when you position N things:
 - Cover it in the `RecordingTarget` test: assert the recorded op positions do **not** collide
   (e.g. every row/label baseline is distinct; adjacent cells don't overlap).
 
+## 2A. Visual & interaction quality (design taste)
+
+Correct-and-tested is the floor; a control also has to *look and feel* deliberate. These are the
+transferable rules from the `design-taste-frontend` skill, adapted for this native 2D framework —
+its web stack (Tailwind / React / Motion / design-system packages / web fonts) does **not** apply
+here; the taste does. Apply them to any new or changed control, panel, or app screen.
+
+- **Motion must be motivated.** Every animation states *why* in one sentence: hierarchy (draw the
+  eye), feedback (acknowledge a press), state transition (show what changed), or reveal (sequence
+  content in). "It looked cool" is not a reason; no idle/looping motion on informational elements.
+- **Motion claimed = motion shown, or drop it.** Time-based motion needs the host's frame tick
+  (`advance(nowMs)` called every frame). If you spec an animation, drive it with an
+  `AnimatedProperty` / `Property` / `Spring` and confirm it actually moves across frames — never
+  ship a half-built tween that snaps. If you can't drive it in the available scope, ship the clean
+  static end-state instead.
+- **Ease, don't lerp-linear.** Use `Easing::EaseOut*` / `Spring` for UI motion (position, size,
+  reveal); linear reads mechanical. Keep durations short (≈120–220 ms).
+- **Reduced motion is mandatory.** Honor `artboard::reducedMotion()`: when set, motion collapses
+  to its final state instantly. The motion primitives already do this — don't re-introduce motion
+  that ignores it.
+- **Consistency locks (per screen).** ONE accent colour, ONE corner-radius scale, ONE type ramp,
+  pulled from `Theme` / design tokens rather than hand-picked per widget. A control that invents
+  its own blue or radius is a bug; match the surrounding surface's density and rhythm.
+- **Contrast.** Text, icons, and fills stay legible on their background (aim WCAG AA: ≈4.5:1 body,
+  ≈3:1 large text / against a fill). No low-contrast label-on-fill (e.g. near-white text on a light
+  highlight) — add a scrim/overlay or pick a legible pair.
+- **Draw every state, not just the happy path.** idle / hover-or-focus (where the input model has
+  it) / pressed / active / disabled, plus **empty** and **loading** where a panel can have no data
+  yet. A control that renders only its selected/full state is unfinished — and a control whose
+  children are created `visible=true` before their first data push will pile up at (0,0): default
+  them hidden/positioned for the empty state.
+- **Anti-slop.** Reach past the obvious default: align to a grid, respect whitespace, keep labels
+  terse and real, and don't stack decorative dividers/dots or duplicate the same affordance twice.
+- **Prove it with `RecordingTarget`.** Where practical, assert the motion/state in a test: sample
+  an `AnimatedProperty` at t = 0 / mid / end, or assert the op stream differs between states — the
+  same way §4 proves layout.
+
 ## 3. Platform-independence rule (non-negotiable)
 
 **Order of preference for any new capability:**
@@ -192,6 +229,10 @@ the source of truth, the conformance reference, and the floor every adapter must
 - [ ] Layout snaps, doesn't stack: sibling elements align/don't overlap; any overlap is an
       intentional overlay (modal/dropdown/tooltip drawn in the overlay pass) and is commented,
       with a test asserting recorded positions don't collide.
+- [ ] Visual/interaction quality (§2A): motion is motivated + actually driven each frame (no
+      snapping half-tween) + eased + honors `reducedMotion()`; colour/radius/type pulled from
+      `Theme` (consistency locks); text/fills legible (contrast); empty & loading states drawn
+      (children default hidden/positioned before first data), not just the happy path.
 - [ ] Branding stays `artboard`/`arstro`.
 - [ ] **Committed** — the implemented + tested feature is committed (one focused commit per
       feature, every touched repo), not left in the working tree.
