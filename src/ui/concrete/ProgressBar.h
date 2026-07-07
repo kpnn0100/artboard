@@ -4,6 +4,7 @@
 #pragma once
 #include "../base/Segment.h"
 #include "../base/Theme.h"
+#include "../../anim/Spring.h"
 
 namespace artboard
 {
@@ -13,8 +14,9 @@ namespace artboard
         explicit ProgressBar(const ProgressStyle &style = Theme::basicTheme().progress);
 
         double value() const { return mValue; }
-        void setValue(double v); // clamped to [0,1]
+        void setValue(double v); // clamped to [0,1]; the shown level eases toward it
         void setStyle(const ProgressStyle &style) { mStyle = style; }
+        void advance(double nowMs) override;
 
     protected:
         void onPaint(IRenderTarget &t) const override;
@@ -23,5 +25,7 @@ namespace artboard
     private:
         ProgressStyle mStyle;
         double mValue = 0.0;
+        double mLastMs = -1.0;
+        Spring mDisplay{0.0};  // shown level, eases toward mValue (no snapping)
     };
 }

@@ -1179,12 +1179,17 @@ TEST(ProgressBar_value_clamp_and_render)
 {
     auto p = std::make_shared<ProgressBar>();
     p->setValue(0.5);
-    CHECK_NEAR(p->value(), 0.5, 1e-9);
+    CHECK_NEAR(p->value(), 0.5, 1e-9);           // logical value is immediate
+    RecordingTarget preAdv; p->render(preAdv);
+    CHECK(preAdv.count(K::FillPath) == 1);        // shown level eases from 0: track only, no fill yet
+    for (int i = 0; i <= 40; ++i) p->advance(i * 25.0);  // step frames so the spring settles to 0.5
     RecordingTarget mid; p->render(mid);
-    CHECK(mid.count(K::FillPath) >= 2); // track + fill
+    CHECK(mid.count(K::FillPath) >= 2);           // track + fill once eased in
 
     p->setValue(-1); CHECK_NEAR(p->value(), 0.0, 1e-9); // clamp low
-    RecordingTarget zero; p->render(zero);              // no-fill branch
+    for (int i = 41; i <= 90; ++i) p->advance(i * 25.0); // ease back down toward 0
+    RecordingTarget zero; p->render(zero);              // no-fill branch (near-zero level)
+    CHECK(zero.count(K::FillPath) == 1);
     p->setValue(2); CHECK_NEAR(p->value(), 1.0, 1e-9);  // clamp high
     CHECK(!p->hitTest({5, 5}));                          // input passes through
 }
@@ -1421,7 +1426,9 @@ TEST(ScrollView_clip_drag_and_thumb)
     sv->onGesture({Gesture::Type::DragStart, {50, 50}, {50, 50}, PointerButton::Left});
     sv->onGesture({Gesture::Type::Drag, {50, -400}, {50, 50}, PointerButton::Left});
     CHECK_NEAR(sv->offset(), 200.0, 1e-9);
-    sv->onGesture({Gesture::Type::Move, {50, 50}, {50, 50}, PointerButton::Left}); // non-drag fallback
+    // A bare Move over the scrollbar gutter (x>content width, so it misses the content child)
+    // reaches ScrollView's own handler and falls through to the base (non-drag fallback).
+    sv->onGesture({Gesture::Type::Move, {195, 50}, {195, 50}, PointerButton::Left});
 
     // non-scrollable: maxOffset 0, onPaint skips the scrollbar branch
     auto sv2 = std::make_shared<ScrollView>();
@@ -2145,6 +2152,309 @@ TEST(Observable_null_observer_ignored)
     CHECK(s.observerCount() == 0);
     s.set(3);                                 // no observers -> still fine
     CHECK(s.get() == 3);
+}
+
+// ───────────────────────── hover + animated state (FR-24 / FR-25) ─────────────────────────
+static bool sameColor(const Color &a, const Color &b)
+{
+    return std::fabs(a.r - b.r) < 1e-9 && std::fabs(a.g - b.g) < 1e-9 &&
+           std::fabs(a.b - b.b) < 1e-9 && std::fabs(a.a - b.a) < 1e-9;
+}
+static Color firstFill(const RecordingTarget &t)
+{
+    for (const auto &o : t.ops())
+        if (o.kind == K::SetFill)
+            return o.color;
+    return Color{};
+}
+static bool anyFillDiffers(const RecordingTarget &x, const RecordingTarget &y)
+{
+    std::vector<Color> fx, fy;
+    for (const auto &o : x.ops()) if (o.kind == K::SetFill) fx.push_back(o.color);
+    for (const auto &o : y.ops()) if (o.kind == K::SetFill) fy.push_back(o.color);
+    if (fx.size() != fy.size()) return true;
+    for (size_t i = 0; i < fx.size(); ++i) if (!sameColor(fx[i], fy[i])) return true;
+    return false;
+}
+// Order-weighted signature of the path geometry: sensitive to WHICH vertex moved
+// (a plain coordinate sum is invariant under reordering, so it would miss a morph
+// between two series with the same total).
+static double geomSig(const RecordingTarget &t)
+{
+    double s = 0.0;
+    int k = 1;
+    for (const auto &o : t.ops())
+        if (o.kind == K::LineTo || o.kind == K::MoveTo)
+        {
+            s += (o.args[0] + o.args[1] * 3.0) * k;
+            ++k;
+        }
+    return s;
+}
+
+TEST(Interaction_color_and_box_helpers)
+{
+    const Color black = Color::rgba(0, 0, 0), white = Color::rgba(255, 255, 255);
+    CHECK_NEAR(lerpColor(black, white, 0.5).r, 0.5, 1e-9);
+    Color br = brighten(Color::rgba(0, 0, 0, 128), 0.5);
+    CHECK_NEAR(br.r, 0.5, 1e-9);
+    CHECK_NEAR(br.a, 128 / 255.0, 1e-9);          // alpha preserved
+
+    Paint fs = lerpPaint(Paint::filledStroked(black, black, 2.0),
+                         Paint::filledStroked(white, white, 4.0), 0.5);
+    CHECK(fs.hasFill && fs.hasStroke);
+    CHECK_NEAR(fs.strokeWidth, 3.0, 1e-9);
+    Paint fo = lerpPaint(Paint::filled(black), Paint::filled(white), 0.5);
+    CHECK(fo.hasFill && !fo.hasStroke);           // stroke branch skipped
+    Paint so = lerpPaint(Paint::stroked(black, 1.0), Paint::stroked(white, 3.0), 0.5);
+    CHECK(!so.hasFill && so.hasStroke);           // fill branch skipped
+
+    BoxStyle bA{Paint::filledStroked(black, black, 1.0), 4.0};
+    BoxStyle bB{Paint::filledStroked(white, white, 1.0), 8.0};
+    CHECK_NEAR(lerpBox(bA, bB, 0.5).cornerRadius, 6.0, 1e-9);
+
+    BoxStyle hs = hoverBox(bA, white, 1.0);
+    CHECK(hs.paint.hasStroke && !sameColor(hs.paint.fill, bA.paint.fill));   // brightened + stroke pulled
+    BoxStyle hf = hoverBox(BoxStyle{Paint::filled(black), 0.0}, white, 1.0);
+    CHECK(!hf.paint.hasStroke);                                              // no-stroke branch
+    CHECK(sameColor(hoverBox(bA, white, 0.0).paint.fill, bA.paint.fill));    // t=0 is identity
+}
+
+TEST(Segment_hover_routing_and_owner)
+{
+    auto root = std::make_shared<Segment>(); root->width.set(200); root->height.set(100);
+    auto a = std::make_shared<Segment>(); a->width.set(50); a->height.set(50);
+    auto b = std::make_shared<Segment>(); b->width.set(50); b->height.set(50); b->x.set(100);
+    root->addChild(a); root->addChild(b);
+
+    root->onGesture({GT::Move, {10, 10}, {10, 10}, PB::Left});     // hover a
+    CHECK(a->isHovered() && !b->isHovered());
+    CHECK(Segment::hoveredSegment() == a.get());
+    CHECK(root->isHoverWithin() && a->isHoverWithin() && !b->isHoverWithin());
+
+    root->onGesture({GT::Move, {110, 10}, {110, 10}, PB::Left});   // hover b, leave a
+    CHECK(b->isHovered() && !a->isHovered());
+
+    root->onGesture({GT::Move, {10, 80}, {10, 80}, PB::Left});     // over root only (gap)
+    CHECK(root->isHovered() && !a->isHovered() && !b->isHovered());
+
+    Segment::setHovered(nullptr);                                  // clear (seg==null path)
+    CHECK(Segment::hoveredSegment() == nullptr && !root->isHoverWithin());
+    Segment::setHovered(a.get());
+    Segment::setHovered(a.get());                                  // same -> early return
+    CHECK(a->isHovered());
+    Segment::setHovered(nullptr);
+}
+
+TEST(Segment_hover_move_during_press_and_destructor)
+{
+    auto root = std::make_shared<Segment>(); root->width.set(100); root->height.set(100);
+    auto a = std::make_shared<Segment>(); a->width.set(100); a->height.set(100);
+    root->addChild(a);
+    root->onGesture({GT::Down, {10, 10}, {10, 10}, PB::Left});     // captures a
+    root->onGesture({GT::Move, {12, 12}, {10, 10}, PB::Left});     // move during press -> captured a
+    CHECK(a->isHovered());
+    root->onGesture({GT::Up, {12, 12}, {10, 10}, PB::Left});
+
+    {
+        auto tmp = std::make_shared<Segment>();
+        Segment::setHovered(tmp.get());
+        CHECK(Segment::hoveredSegment() == tmp.get());
+    }
+    CHECK(Segment::hoveredSegment() == nullptr);                   // destructor relinquished hover
+
+    auto hidden = std::make_shared<Segment>(); hidden->visible = false;
+    RecordingTarget rt; hidden->renderOverlay(rt);                 // !visible overlay early-out
+    CHECK(rt.ops().empty());
+}
+
+TEST(Segment_hover_amount_animates)
+{
+    auto btn = std::make_shared<Button>();
+    btn->onGesture({GT::Move, {5, 5}, {5, 5}, PB::Left});
+    CHECK(btn->isHovered());
+    btn->advance(0.0);                                             // baseline + animateTo(1)
+    CHECK_NEAR(btn->hoverAmount(), 0.0, 1e-6);
+    btn->advance(60.0);                                            // no-change path + mid value
+    CHECK(btn->hoverAmount() > 0.1 && btn->hoverAmount() < 1.0);
+    btn->advance(200.0);
+    CHECK_NEAR(btn->hoverAmount(), 1.0, 1e-6);
+    Segment::setHovered(nullptr);
+    btn->advance(260.0);                                           // animateTo(0)
+    btn->advance(500.0);
+    CHECK_NEAR(btn->hoverAmount(), 0.0, 1e-6);
+    btn->advance(560.0);                                           // steady no-change path
+    CHECK_NEAR(btn->hoverAmount(), 0.0, 1e-6);
+}
+
+TEST(Button_press_and_hover_animate)
+{
+    auto b = std::make_shared<Button>();
+    RecordingTarget idle; b->render(idle);
+    const Color idleFill = firstFill(idle);
+    b->onGesture({GT::Down, {5, 5}, {5, 5}, PB::Left});
+    for (int i = 0; i <= 20; ++i) b->advance(i * 10.0);            // press crossfades to pressed
+    RecordingTarget pressed; b->render(pressed);
+    CHECK(!sameColor(firstFill(pressed), idleFill));
+    b->onGesture({GT::Click, {5, 5}, {5, 5}, PB::Left});
+    b->onGesture({GT::Up, {5, 5}, {5, 5}, PB::Left});
+    for (int i = 21; i <= 45; ++i) b->advance(i * 10.0);
+    RecordingTarget released; b->render(released);
+    CHECK(sameColor(firstFill(released), idleFill));              // back to idle (not hovered)
+    b->onGesture({GT::Move, {5, 5}, {5, 5}, PB::Left});
+    for (int i = 46; i <= 70; ++i) b->advance(i * 10.0);
+    RecordingTarget hov; b->render(hov);
+    CHECK(!sameColor(firstFill(hov), idleFill));                  // hover nudges body toward pressed
+    b->onGesture({GT::Drop, {5, 5}, {5, 5}, PB::Left});           // cover Drop branch
+    b->advance(800.0);
+}
+
+TEST(Checkbox_check_grows_and_hover)
+{
+    auto c = std::make_shared<Checkbox>("x");
+    RecordingTarget off; c->render(off);
+    CHECK(off.count(K::FillPath) == 1);                           // box only (indicator size 0)
+    c->onGesture({GT::Click, {5, 5}, {5, 5}, PB::Left});          // toggle -> animate in
+    RecordingTarget preAdv; c->render(preAdv);
+    CHECK(preAdv.count(K::FillPath) == 1);                        // still hidden pre-advance (no pop)
+    for (int i = 0; i <= 20; ++i) c->advance(i * 10.0);
+    RecordingTarget on; c->render(on);
+    CHECK(on.count(K::FillPath) >= 2);                            // box + grown indicator
+    c->onGesture({GT::Move, {5, 5}, {5, 5}, PB::Left});
+    for (int i = 21; i <= 45; ++i) c->advance(i * 10.0);
+    RecordingTarget hov; c->render(hov);
+    CHECK(!sameColor(firstFill(hov), firstFill(off)));           // box brightened on hover
+    c->setChecked(false);                                        // programmatic snap
+    RecordingTarget cleared; c->render(cleared);
+    CHECK(cleared.count(K::FillPath) == 1);
+}
+
+TEST(ToggleSwitch_hover_brightens_track)
+{
+    auto sw = std::make_shared<ToggleSwitch>();
+    RecordingTarget idle; sw->render(idle);
+    sw->onGesture({GT::Move, {5, 5}, {5, 5}, PB::Left});
+    for (int i = 0; i <= 20; ++i) sw->advance(i * 10.0);
+    RecordingTarget hov; sw->render(hov);
+    CHECK(!sameColor(firstFill(hov), firstFill(idle)));          // track brightened on hover
+}
+
+TEST(Slider_hover_grows_thumb)
+{
+    auto s = std::make_shared<Slider>(); s->setValue(0.5);
+    for (int i = 0; i <= 12; ++i) s->advance(i * 16.0);           // settle display
+    RecordingTarget idle; s->render(idle);
+    s->onGesture({GT::Move, {80, 14}, {80, 14}, PB::Left});
+    for (int i = 13; i <= 45; ++i) s->advance(i * 16.0);
+    RecordingTarget hov; s->render(hov);
+    CHECK(anyFillDiffers(idle, hov));                            // thumb brightened/grown
+}
+
+TEST(Knob_hover_brightens_dial)
+{
+    auto k = std::make_shared<Knob>(); k->setValue(0.5);
+    for (int i = 0; i <= 12; ++i) k->advance(i * 16.0);
+    RecordingTarget idle; k->render(idle);
+    k->onGesture({GT::Move, {32, 32}, {32, 32}, PB::Left});
+    for (int i = 13; i <= 45; ++i) k->advance(i * 16.0);
+    RecordingTarget hov; k->render(hov);
+    CHECK(anyFillDiffers(idle, hov));
+}
+
+TEST(ComboBox_row_hover_glides)
+{
+    auto c = std::make_shared<ComboBox>();
+    c->setOptions({"a", "b", "c"});
+    c->advance(0.0);
+    c->onGesture({GT::Move, {20, 70}, {20, 70}, PB::Left});       // closed -> row -1 branch
+    c->onGesture({GT::Click, {5, 5}, {5, 5}, PB::Left});          // open
+    CHECK(c->isOpen());
+    c->onGesture({GT::Move, {20, 70}, {20, 70}, PB::Left});       // hover row 1 (open)
+    for (int i = 1; i <= 45; ++i) c->advance(i * 16.0);           // reveal + highlight settle
+    RecordingTarget ovHi; c->renderOverlay(ovHi);
+    RecordingTarget field; c->render(field);
+    (void)field;
+    c->onGesture({GT::Move, {20, 10}, {20, 10}, PB::Left});       // back onto field -> row -1
+    for (int i = 46; i <= 90; ++i) c->advance(i * 16.0);
+    RecordingTarget ovNone; c->renderOverlay(ovNone);
+    CHECK(ovHi.count(K::FillPath) > ovNone.count(K::FillPath));   // gliding highlight appeared then faded
+}
+
+TEST(TabView_select_animates_and_hover)
+{
+    TabStyle st = Theme::basicTheme().tab;
+    st.activeIndicatorColor = Color::rgba(255, 0, 0);
+    st.activeIndicatorHeight = 3.0;
+    auto tv = std::make_shared<TabView>(st);
+    tv->addPage("one", std::make_shared<Segment>());
+    tv->addPage("two", std::make_shared<Segment>());
+    tv->advance(0.0);
+    RecordingTarget sel0; tv->render(sel0);
+    tv->setSelectedIndex(1);
+    for (int i = 1; i <= 30; ++i) tv->advance(i * 16.0);
+    RecordingTarget sel1; tv->render(sel1);
+    CHECK(std::fabs(geomSig(sel0) - geomSig(sel1)) > 1e-6);       // active tab geometry eased to tab 1
+    tv->onGesture({GT::Move, {10, 10}, {10, 10}, PB::Left});      // hover tab 0 (on strip)
+    for (int i = 31; i <= 60; ++i) tv->advance(i * 16.0);
+    RecordingTarget hov; tv->render(hov);
+    CHECK(anyFillDiffers(sel1, hov));
+    tv->onGesture({GT::Move, {10, 100}, {10, 100}, PB::Left});    // off strip -> hover tab -1
+    for (int i = 61; i <= 90; ++i) tv->advance(i * 16.0);
+}
+
+TEST(ScrollView_scrollbar_hover)
+{
+    auto sv = std::make_shared<ScrollView>();
+    sv->width.set(100); sv->height.set(100);
+    auto content = std::make_shared<Segment>(); content->width.set(100); content->height.set(300);
+    sv->setContent(content);
+    sv->setContentHeight(300);
+    sv->advance(0.0);
+    RecordingTarget idle; sv->render(idle);
+    sv->onGesture({GT::Move, {50, 50}, {50, 50}, PB::Left});      // hover the content
+    CHECK(sv->isHoverWithin());
+    for (int i = 1; i <= 30; ++i) sv->advance(i * 16.0);
+    RecordingTarget hov; sv->render(hov);
+    CHECK(anyFillDiffers(idle, hov));                            // scrollbar emphasised on hover
+}
+
+TEST(TextBox_focus_and_caret_animate)
+{
+    auto tb = std::make_shared<TextBox>();
+    RecordingTarget blur; tb->render(blur);
+    const int blurFills = blur.count(K::FillPath);
+    tb->onGesture({GT::Down, {5, 5}, {5, 5}, PB::Left});          // focus
+    CHECK(tb->hasFocus());
+    for (int i = 0; i <= 20; ++i) tb->advance(i * 10.0);          // focus border + caret fade in
+    RecordingTarget foc; tb->render(foc);
+    CHECK(foc.count(K::FillPath) > blurFills);                    // caret now drawn
+    auto other = std::make_shared<TextBox>();
+    other->requestFocus();                                       // steal focus -> tb blurs
+    CHECK(!tb->hasFocus());
+    for (int i = 21; i <= 60; ++i) tb->advance(i * 10.0);
+    RecordingTarget after; tb->render(after);
+    CHECK(after.count(K::FillPath) == blurFills);                // caret faded out (no pop)
+}
+
+TEST(LineGraph_series_morph)
+{
+    auto g = std::make_shared<LineGraph>();
+    g->setRange(0.0, 1.0);
+    g->setSeries({0.2, 0.4, 0.6, 0.8, 0.5});                     // 0 -> 5 : assign+reset
+    g->advance(0.0);
+    RecordingTarget r0; g->render(r0);
+    const int strokes5 = r0.count(K::StrokePath);
+    g->setSeries({0.8, 0.6, 0.4, 0.2, 0.5});                     // 5 -> 5 : setTarget (morph)
+    RecordingTarget mid; g->render(mid);                         // pre-advance: still old shape
+    for (int i = 1; i <= 30; ++i) g->advance(i * 16.0);
+    RecordingTarget settled; g->render(settled);
+    CHECK(std::fabs(geomSig(mid) - geomSig(settled)) > 1e-6);    // series morphed
+    g->setSeries({0.5});                                         // 5 -> 1 : polyline skipped
+    RecordingTarget one; g->render(one);
+    CHECK(one.count(K::StrokePath) < strokes5);
+    g->setSeries({});                                            // 1 -> 0 : empty
+    RecordingTarget none; g->render(none);
+    CHECK(none.count(K::StrokePath) == one.count(K::StrokePath));
 }
 
 int main() { return mini::runAll(); }

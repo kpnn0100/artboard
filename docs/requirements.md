@@ -379,6 +379,57 @@ disagree — e.g. the rail is open but its toggle isn't highlighted).
   third small state primitive in `ui/base`; the framework provides the primitive, callers wire
   which fields (a button's `active`, a panel's `visible`/target width) observe it.
 
+### FR-24 Pointer hover state and routing
+
+The framework shall track a **hover** state so any interactive control can render a distinct
+appearance while the pointer rests over it (without a press). Hover is platform-free (no HAL
+change): it is derived from the existing `Gesture::Type::Move` stream the adapter already feeds.
+
+- **Routing.** A bare `Move` (no active press capture) shall be routed by `Segment` down to the
+  **deepest hit-tested handler** under the cursor — the same segment a `Down` at that point would
+  reach — and delivered to that segment's gesture handler so positional controls (e.g. a
+  `ComboBox` row, a `TabView` tab) can track *where* the pointer is. This closes a prior gap in
+  which a hover `Move` reached only the root and never the control under the cursor. A `Move`
+  emitted *during* a press (before the drag threshold) continues to go to the captured segment,
+  unchanged.
+- **Ownership.** At most **one** segment is hovered at a time (a single pointer). Moving onto a
+  segment sets its hover and clears the previously-hovered one (hover-leave); moving onto empty
+  background clears any control's hover. Hover shall never be set on a `disabled`/hidden segment.
+  A destroyed segment relinquishes hover so no dangling hover owner remains.
+- **Animated hover factor.** `Segment` shall expose an animated `hoverAmount()` in `[0,1]` that
+  eases toward `1` while hovered and `0` otherwise (short, ≈120 ms, eased), advanced once per
+  frame in `advance(nowMs)`. It honors the reduced-motion switch (FR-4e): under reduced motion it
+  snaps to its endpoint. Controls read `hoverAmount()` to interpolate their hover appearance so a
+  hover never pops on or off.
+- **Consistent treatment.** A single shared hover treatment (brighten the fill, pull the border
+  toward the control's emphasis colour) is defined once (`ui::interaction`) and reused by every
+  control, so hover reads identically framework-wide and works for any theme without new theme
+  fields (consistency lock). Every clickable control — `Button`, `Checkbox`, `ToggleSwitch`,
+  `Slider`, `Knob`, `ComboBox` (field + a gliding per-row highlight), `TabView` (per-tab),
+  `ScrollView` (scrollbar thumb), `TextBox` — shall present this animated hover feedback.
+
+### FR-25 Animated state transitions (no snapping)
+
+Every visible state change in a control shall reach its new value through an animation primitive
+(`AnimatedProperty`/`Property`/`Spring`), never by assigning the visible value in one frame, and
+shall collapse to the final state instantly only under reduced motion (FR-4e). Direct-manipulation
+tracking (a transform that follows the pointer 1:1 — the slider/knob drag value, scroll-drag
+offset, and the `ImageView` pan-drag / zoom-about-a-point, whose `fittedRect()` must remain the
+authoritative *immediate* geometry that overlays and hit-testing align to) is exempt, because the
+pointer itself is the animation. Concretely:
+
+- `Button` — the press/idle appearance **crossfades** (it does not swap in one frame).
+- `Checkbox` — the check indicator **grows in / out** (it does not pop).
+- `ToggleSwitch` — the track colour **blends** continuously between off and on with the thumb
+  (no hard swap at the midpoint).
+- `TabView` — selecting a tab **animates** the active/idle transition (tab geometry + colour ease;
+  an active indicator glides to the selected tab).
+- `TextBox` — the focus border **blends** in/out and the caret **fades** (it does not pop).
+- `ProgressBar` — the displayed level **eases** toward the set value.
+- `LineGraph` — the plotted series **morphs** toward a newly set series (fast, so live/streaming
+  data still tracks); a change in point count lands immediately (a morph across differing counts
+  is ill-defined).
+
 ## 4. Non-functional Requirements
 
 ### NFR-1 Platform independence

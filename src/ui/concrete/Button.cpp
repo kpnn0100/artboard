@@ -1,4 +1,5 @@
 #include "Button.h"
+#include "../base/Interaction.h"
 
 namespace artboard
 {
@@ -22,11 +23,19 @@ namespace artboard
         Segment::render(t, parent);
     }
 
+    void Button::advance(double nowMs)
+    {
+        mNowMs = nowMs;
+        mPress.update(nowMs);
+        Segment::advance(nowMs); // drives hoverAmount()
+    }
+
     bool Button::handleGesture(const Gesture &g, const Point &localPoint)
     {
         if (g.type == Gesture::Type::Down)
         {
             mPressed = true;
+            mPress.animateTo(1.0, 90.0, Easing::EaseOutCubic, mNowMs);
             return true;
         }
         if (g.type == Gesture::Type::Up)
@@ -37,6 +46,7 @@ namespace artboard
         {
             const bool invoke = mPressed;
             mPressed = false;
+            mPress.animateTo(0.0, 150.0, Easing::EaseOutCubic, mNowMs);
             if (invoke && onClick)
                 onClick();
             return true;
@@ -44,6 +54,7 @@ namespace artboard
         if (g.type == Gesture::Type::Drop)
         {
             mPressed = false;
+            mPress.animateTo(0.0, 150.0, Easing::EaseOutCubic, mNowMs);
             return true;
         }
         return Segment::handleGesture(g, localPoint);
@@ -78,7 +89,12 @@ namespace artboard
     {
         ensureVisualTree();
 
-        mBody->style = mPressed ? mStyle.pressed : mStyle.idle;
+        // Crossfade idle<->pressed by the animated press factor; hover nudges the body
+        // partway toward the pressed (accent) look — both eased, so nothing snaps. Both
+        // factors are non-overshooting EaseOutCubic values in [0,1], so blend stays in [0,1].
+        const double press = mPress.value();
+        const double blend = press + (1.0 - press) * 0.4 * hoverAmount();
+        mBody->style = lerpBox(mStyle.idle, mStyle.pressed, blend);
         mBody->x.set(0.0);
         mBody->y.set(0.0);
         mBody->width.set(width.value());

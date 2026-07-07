@@ -23,6 +23,7 @@
 #include "../../src/ui/base/Property.h"
 #include "../../src/ui/base/InputController.h"
 #include "../../src/ui/base/Theme.h"
+#include "../../src/ui/base/Interaction.h"
 #include "../../src/ui/base/Segment.h"
 #include "../../src/ui/base/AbstractSlider.h"
 #include "../../src/ui/base/ModBus.h"

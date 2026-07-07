@@ -1,4 +1,5 @@
 #include "Slider.h"
+#include "../base/Interaction.h"
 
 namespace artboard
 {
@@ -162,7 +163,8 @@ namespace artboard
         const double trackHeight = height.value() * 0.35;
         const double trackY = (height.value() - trackHeight) * 0.5;
         const double normalized = displayNormalized();  // spring-smoothed thumb/fill
-        const double thumbDiameter = mStyle.thumbRadius * 2.0;
+        const double hv = hoverAmount();
+        const double thumbDiameter = (mStyle.thumbRadius + 2.0 * hv) * 2.0;  // grows on hover
         const double thumbCenter = normalized * width.value();
 
         // A gradient track is drawn by onPaint; hide the solid track + range fill.
@@ -194,7 +196,7 @@ namespace artboard
         mRangeFill->width.set(width.value() * (fillHi - fillLo));
         mRangeFill->height.set(trackHeight);
 
-        mThumb->style = mStyle.thumb;
+        mThumb->style = hoverBox(mStyle.thumb, mStyle.rangeFill.paint.fill, hv);
         mThumb->x.set(thumbCenter - thumbDiameter * 0.5);
         mThumb->y.set((height.value() - thumbDiameter) * 0.5);
         mThumb->width.set(thumbDiameter);

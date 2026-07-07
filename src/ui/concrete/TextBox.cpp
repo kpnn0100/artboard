@@ -1,4 +1,5 @@
 #include "TextBox.h"
+#include "../base/Interaction.h"
 
 namespace artboard
 {
@@ -20,6 +21,18 @@ namespace artboard
     {
         syncVisuals();
         Segment::render(t, parent);
+    }
+
+    void TextBox::advance(double nowMs)
+    {
+        mNowMs = nowMs;
+        if (hasFocus() != mFocusPrev)  // ease the focus border + caret in/out (no pop)
+        {
+            mFocusPrev = hasFocus();
+            mFocusAmt.animateTo(mFocusPrev ? 1.0 : 0.0, 140.0, Easing::EaseOutCubic, nowMs);
+        }
+        mFocusAmt.update(nowMs);
+        Segment::advance(nowMs);  // drives hoverAmount()
     }
 
     bool TextBox::handleGesture(const Gesture &g, const Point &localPoint)
@@ -71,7 +84,10 @@ namespace artboard
         ensureVisualTree();
 
         const double padding = 10.0;
-        mBox->style = hasFocus() ? mStyle.focused : mStyle.idle;
+        // Blend idle<->focused by the animated focus factor, then hover brightens/pulls the
+        // border toward the accent (caret colour). Neither the border nor caret pops.
+        const double fa = mFocusAmt.value();
+        mBox->style = hoverBox(lerpBox(mStyle.idle, mStyle.focused, fa), mStyle.caretColor, hoverAmount());
         mBox->width.set(width.value());
         mBox->height.set(height.value());
 
@@ -80,8 +96,10 @@ namespace artboard
         mLabel->x.set(padding);
         mLabel->y.set((height.value() - mLabel->style.sizePx) * 0.5 - 2.0);
 
-        mCaret->style = {Paint::filled(mStyle.caretColor), 0.0};
-        mCaret->visible = hasFocus();
+        Color caret = mStyle.caretColor;
+        caret.a *= fa;  // caret fades in with focus, out on blur
+        mCaret->style = {Paint::filled(caret), 0.0};
+        mCaret->visible = fa > 0.01;
         mCaret->x.set(padding + estimateTextWidth(text, mStyle.text.sizePx));
         mCaret->y.set(8.0);
         mCaret->width.set(2.0);

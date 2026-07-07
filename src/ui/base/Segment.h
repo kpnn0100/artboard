@@ -66,6 +66,18 @@ namespace artboard
         static Segment *focusedInGroup(int focusIndex);
         bool dispatchKey(const KeyEvent &event);
 
+        // ---- hover (FR-24) ----
+        /** True while the pointer rests over this segment (single global owner). */
+        bool isHovered() const { return mHovered; }
+        /** Animated hover factor in [0,1]; controls scale their hover look by it. */
+        double hoverAmount() const { return mHoverAmount.value(); }
+        /** True if this segment OR any descendant is the current hover owner — for
+         *  containers (e.g. ScrollView) that react to hover over their content. */
+        bool isHoverWithin() const;
+        /** Set the one hovered segment; clears the previously-hovered one. */
+        static void setHovered(Segment *seg);
+        static Segment *hoveredSegment();
+
     protected:
         void onDraw(IRenderTarget &) const override {}
         virtual void onPaint(IRenderTarget &t) const {}
@@ -79,11 +91,15 @@ namespace artboard
         Segment *topmostChildAt(const Point &worldPoint) const;
         bool dispatchGesture(const Gesture &g);
         void clearFocusRegistration();
+        void updateHoverAnim(double nowMs);
         static bool isHorizontal(SnapEdge e);
         double edgeInset(SnapEdge e) const;
         void resolveSnap();
 
         Segment *mParent = nullptr;
+        bool mHovered = false;
+        bool mHoverPrev = false;
+        Property mHoverAmount{0.0};
         Segment *mSnapTarget = nullptr;
         SnapEdge mSnapMine = SnapEdge::Left;
         SnapEdge mSnapTheirs = SnapEdge::Right;

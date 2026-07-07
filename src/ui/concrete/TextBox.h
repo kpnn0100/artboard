@@ -21,6 +21,7 @@ namespace artboard
 
         void setStyle(const TextBoxStyle &style);
         void render(IRenderTarget &t, const Transform &parent = Transform::identity()) const override;
+        void advance(double nowMs) override;
 
     protected:
         bool handleGesture(const Gesture &g, const Point &localPoint) override;
@@ -32,6 +33,9 @@ namespace artboard
         double estimateTextWidth(const std::string &value, double sizePx) const;
 
         TextBoxStyle mStyle;
+        double mNowMs = 0.0;
+        bool mFocusPrev = false;
+        Property mFocusAmt{0.0};  // animated focus factor (border blend + caret fade)
         mutable std::shared_ptr<RectangleSegment> mBox;
         mutable std::shared_ptr<LabelSegment> mLabel;
         mutable std::shared_ptr<RectangleSegment> mCaret;

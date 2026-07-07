@@ -5,6 +5,7 @@
 #include "../base/Segment.h"
 #include "../base/Theme.h"
 #include "../../anim/Animation.h"
+#include "../../anim/Spring.h"
 #include <functional>
 #include <string>
 #include <vector>
@@ -43,5 +44,8 @@ namespace artboard
         bool mOpen = false;              // logical state (drives hit-testing immediately)
         AnimatedProperty mOpenAnim;      // visual reveal 0..1 (fade + slide)
         double mNowMs = 0.0;             // last advance() time, stamped for open/close
+        int mHoverRow = -1;              // option row under the pointer (-1 = none)
+        Spring mRowHiY{0.0};             // gliding row-highlight Y (follows the hovered row)
+        Spring mRowHiA{0.0};             // row-highlight alpha (eases in/out)
     };
 }

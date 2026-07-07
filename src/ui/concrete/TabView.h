@@ -4,6 +4,7 @@
 #pragma once
 #include "../base/Segment.h"
 #include "../base/Theme.h"
+#include "../../anim/Spring.h"
 #include <functional>
 #include <memory>
 #include <string>
@@ -26,6 +27,7 @@ namespace artboard
         void setStyle(const TabStyle &style) { mStyle = style; }
 
         void render(IRenderTarget &t, const Transform &parent = Transform::identity()) const override;
+        void advance(double nowMs) override;
 
     protected:
         void onPaint(IRenderTarget &t) const override;
@@ -37,5 +39,10 @@ namespace artboard
         std::vector<std::string> mTitles;
         std::vector<std::shared_ptr<Segment>> mPages;
         int mSelected = 0;
+        int mHoverTab = -1;                 // tab under the pointer (-1 = none)
+        double mNowMs = 0.0;
+        double mLastMs = -1.0;
+        std::vector<Property> mTabFade;     // per-tab active factor [0,1] (eased on select)
+        std::vector<Spring> mTabHover;      // per-tab hover factor [0,1] (glides between tabs)
     };
 }

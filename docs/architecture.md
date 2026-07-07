@@ -32,6 +32,7 @@ Both models emit the same render primitives to `IRenderTarget` and use the same 
 - Renderable.
 - Hit-testable.
 - Focusable.
+- Hoverable (a single global hover owner; see 2.6).
 - Nestable.
 - Animatable through scalar properties.
 
@@ -53,6 +54,37 @@ objects.
 Focus is treated as a cross-tree concern. Each focus group is represented by an index, and only one
 segment in a group may be focused at a time. This supports keyboard navigation policies without
 forcing all controls into one monolithic manager class.
+
+### 2.6 Hover state and routing (FR-24)
+
+Hover is a cross-tree concern like focus, but simpler: a single pointer hovers at most one segment,
+so there is one global hover owner (not an index→segment registry). It is derived entirely from the
+existing input HAL — no new primitive:
+
+- **Routing.** `Segment::dispatchGesture` routes a bare `Move` (a `Move` with no active press
+  capture) down to the deepest hit-tested handler — the same segment a `Down` at that point would
+  reach — and delivers it there. Previously a hover `Move` reached only the root; this closes that
+  gap so positional controls (`ComboBox` rows, `TabView` tabs) can track the pointer. A `Move`
+  during a press still goes to the captured segment.
+- **Ownership.** `Segment::setHovered(seg)` sets the one hovered segment and clears the previous
+  owner (hover-leave). `advance(nowMs)` eases a per-segment `hoverAmount()` in `[0,1]` (≈120 ms,
+  reduced-motion-safe) that controls read to interpolate their hover look — so hover never pops.
+  `isHoverWithin()` lets a container (e.g. `ScrollView`) react to hover over its content.
+- **Shared treatment.** `ui/base/Interaction.h` defines the one hover appearance (brighten fill,
+  pull border toward the control's emphasis colour) plus colour/paint/box lerp helpers, so hover
+  reads identically across controls and works for any theme without new theme fields. This is the
+  "consistency lock" for interaction feedback.
+
+### 2.7 Animated state transitions (FR-25)
+
+Controls never change a visible property in a single frame. Each interactive control drives its
+state through an animation primitive: a `Property`/`AnimatedProperty` for one-shot transitions
+(`Button` press, `Checkbox` check grow-in, `TabView` per-tab active fade, `TextBox` focus border +
+caret) and a `Spring` for followers (`ProgressBar` level, `LineGraph` series morph, `ComboBox`
+gliding row highlight, `ScrollView` scrollbar emphasis). Direct-manipulation transforms that track
+the pointer 1:1 (slider/knob drag value, scroll-drag offset, `ImageView` pan/zoom whose
+`fittedRect()` is authoritative immediate geometry) are exempt. All of it collapses to the final
+state under `reducedMotion()`.
 
 ## 3. Package Responsibilities
 
@@ -148,7 +180,10 @@ The `ui` module is split by role into two folders, **one class per file** for ma
 - **`ui/base/`** — framework foundations and reusable building blocks:
   - `Segment` (composite interactive base; `clipToBounds` clips children via the HAL `clipRect`;
     `snapTo()` constrains one edge to another segment's edge + offset, resolved each `advance()`
-    so a segment follows the one it is snapped to),
+    so a segment follows the one it is snapped to; owns hover state + an animated `hoverAmount()`
+    and routes bare `Move` gestures to the hovered handler — FR-24),
+  - `Interaction` (the one shared hover treatment + colour/paint/box lerp helpers, so every
+    control's hover reads identically and works for any theme without new theme fields — FR-24),
   - `LinearLayout` (base) + `Row` / `Column` — position visible children along one axis with
     spacing/padding and auto-size to content (resolved each `advance()`),
   - `InputController` (abstract input strategy; also declares `KeyEvent` and the `isConfirmKey`

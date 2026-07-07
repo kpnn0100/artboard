@@ -1,4 +1,5 @@
 #include "Knob.h"
+#include "../base/Interaction.h"
 #include <cmath>
 
 namespace artboard
@@ -102,8 +103,11 @@ namespace artboard
         const double cy = avail * 0.5;
         const double arcR = r - mStyle.arcWidth;
         const double norm = displayNormalized();
+        const double hv = hoverAmount();
 
-        drawCircle(t, cx, cy, r, mStyle.dial.paint);
+        // Hover: brighten the dial and pull its border toward the value colour.
+        drawCircle(t, cx, cy, r, hoverBox(mStyle.dial, mStyle.valueColor, hv).paint);
+        const Color valueColor = brighten(mStyle.valueColor, interaction::kHoverFillLift * hv);
 
         // Full track arc (270° sweep).
         t.beginPath();
@@ -133,7 +137,7 @@ namespace artboard
                 else
                     t.lineTo(p.x, p.y);
             }
-            t.setStroke(mStyle.valueColor, mStyle.arcWidth);
+            t.setStroke(valueColor, mStyle.arcWidth);
             t.strokePath();
         }
 

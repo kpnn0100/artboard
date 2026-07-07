@@ -1,4 +1,5 @@
 #include "Segment.h"
+#include "Interaction.h"
 #include <unordered_map>
 
 namespace artboard
@@ -10,11 +11,53 @@ namespace artboard
             static std::unordered_map<int, Segment *> registry;
             return registry;
         }
+
+        // Single global hover owner — one pointer hovers at most one segment (FR-24).
+        Segment *&hoverSlot()
+        {
+            static Segment *hovered = nullptr;
+            return hovered;
+        }
     }
 
     Segment::~Segment()
     {
         clearFocusRegistration();
+        if (hoverSlot() == this) // relinquish hover so no dangling owner remains
+            hoverSlot() = nullptr;
+    }
+
+    void Segment::setHovered(Segment *seg)
+    {
+        Segment *&slot = hoverSlot();
+        if (slot == seg)
+            return;
+        if (slot)
+            slot->mHovered = false; // hover-leave the previous owner
+        slot = seg;
+        if (seg)
+            seg->mHovered = true;
+    }
+
+    Segment *Segment::hoveredSegment() { return hoverSlot(); }
+
+    bool Segment::isHoverWithin() const
+    {
+        for (Segment *s = hoverSlot(); s; s = s->mParent)
+            if (s == this)
+                return true;
+        return false;
+    }
+
+    void Segment::updateHoverAnim(double nowMs)
+    {
+        const bool h = mHovered && enabled && visible;
+        if (h != mHoverPrev) // ease toward the new hover state (reduced-motion safe)
+        {
+            mHoverPrev = h;
+            mHoverAmount.animateTo(h ? 1.0 : 0.0, interaction::kHoverMs, Easing::EaseOutCubic, nowMs);
+        }
+        mHoverAmount.update(nowMs);
     }
 
     void Segment::render(IRenderTarget &t, const Transform &parent) const
@@ -129,6 +172,7 @@ namespace artboard
 
     void Segment::advance(double nowMs)
     {
+        updateHoverAnim(nowMs);
         x.update(nowMs);
         y.update(nowMs);
         width.update(nowMs);
@@ -268,10 +312,19 @@ namespace artboard
                 return mCapturedChild->dispatchGesture(g);
             return handleGesture(g, toLocal(g.pos));
         }
+        case Gesture::Type::Move:
+            // A move DURING a press (before the drag threshold) stays with the captured
+            // segment. A bare hover move (no capture) hit-tests down to the deepest handler
+            // under the cursor, which becomes the hover owner (FR-24).
+            if (mCapturedChild)
+                return mCapturedChild->dispatchGesture(g);
+            if (Segment *child = topmostChildAt(g.pos))
+                return child->dispatchGesture(g);
+            setHovered(this); // leaf under the cursor owns hover (or clears it onto background)
+            return handleGesture(g, toLocal(g.pos));
         case Gesture::Type::DragStart:
         case Gesture::Type::Drag:
         case Gesture::Type::Up:
-        case Gesture::Type::Move:
         case Gesture::Type::Drop:
             if (mCapturedChild)
             {

@@ -1,4 +1,5 @@
 #include "ComboBox.h"
+#include "../base/Interaction.h"
 
 namespace artboard
 {
@@ -36,8 +37,23 @@ namespace artboard
 
     void ComboBox::advance(double nowMs)
     {
+        const double dt = mNowMs <= 0.0 ? 0.0 : (nowMs - mNowMs) / 1000.0;
         mNowMs = nowMs;
         mOpenAnim.update(nowMs);
+
+        // Glide a highlight bar to the hovered option row; fade it in only while a row
+        // is actually hovered in the open list (so it never pops between rows).
+        const bool showHi = mOpen && isHovered() && mHoverRow >= 0 && mHoverRow < (int)mOptions.size();
+        if (showHi)
+        {
+            const double targetY = height.value() + mHoverRow * rowHeight;
+            if (mRowHiA.value() < 0.01)
+                mRowHiY.reset(targetY);  // appear at the row, don't glide up from the top
+            mRowHiY.setTarget(targetY);
+        }
+        mRowHiA.setTarget(showHi ? 1.0 : 0.0);
+        mRowHiY.advance(dt);
+        mRowHiA.advance(dt);
         Segment::advance(nowMs);
     }
 
@@ -49,6 +65,15 @@ namespace artboard
 
     bool ComboBox::handleGesture(const Gesture &g, const Point &localPoint)
     {
+        if (g.type == Gesture::Type::Move)
+        {
+            // Track which open-list row the pointer is over (drives the hover highlight).
+            const double h = height.value();
+            mHoverRow = (mOpen && localPoint.y > h)
+                            ? (int)((localPoint.y - h) / rowHeight)
+                            : -1;
+            return Segment::handleGesture(g, localPoint);
+        }
         if (g.type != Gesture::Type::Click)
             return Segment::handleGesture(g, localPoint);
 
@@ -78,7 +103,9 @@ namespace artboard
     void ComboBox::onPaint(IRenderTarget &t) const
     {
         const double w = width.value(), h = height.value();
-        drawRoundedRect(t, Rect{0, 0, w, h}, mStyle.field.cornerRadius, mStyle.field.paint);
+        // Hover: brighten the field, pull its border toward the accent (caret colour).
+        const BoxStyle field = hoverBox(mStyle.field, mStyle.caretColor, hoverAmount());
+        drawRoundedRect(t, Rect{0, 0, w, h}, field.cornerRadius, field.paint);
 
         t.setFill(mStyle.text.color);
         const std::string &sel = mOptions.empty() ? std::string() : mOptions[mSelected];
@@ -116,6 +143,16 @@ namespace artboard
         pop.fill = fade(pop.fill);
         pop.stroke = fade(pop.stroke);
         drawRoundedRect(t, Rect{0, h + yoff, w, popupH}, mStyle.popup.cornerRadius, pop);
+
+        // Gliding hover highlight under the row the pointer rests on (fades with mRowHiA).
+        const double hiA = mRowHiA.value() * p;
+        if (hiA > 0.003)
+        {
+            Color hc = mStyle.caretColor;
+            hc.a *= 0.28 * hiA;
+            drawRoundedRect(t, Rect{0, mRowHiY.value() + yoff, w, rowHeight},
+                            mStyle.rowSelected.cornerRadius, Paint::filled(hc));
+        }
         for (int i = 0; i < (int)mOptions.size(); ++i)
         {
             const double ry = h + yoff + i * rowHeight;

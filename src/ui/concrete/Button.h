@@ -21,6 +21,7 @@ namespace artboard
 
         void setStyle(const ButtonStyle &style);
         void render(IRenderTarget &t, const Transform &parent = Transform::identity()) const override;
+        void advance(double nowMs) override;
 
     protected:
         bool handleGesture(const Gesture &g, const Point &localPoint) override;
@@ -32,6 +33,8 @@ namespace artboard
 
         ButtonStyle mStyle;
         bool mPressed = false;
+        double mNowMs = 0.0;
+        mutable Property mPress{0.0};  // animated press factor (crossfade idle<->pressed)
         mutable std::shared_ptr<RectangleSegment> mBody;
         mutable std::shared_ptr<LabelSegment> mLabel;
     };

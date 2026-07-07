@@ -1,4 +1,5 @@
 #include "ToggleSwitch.h"
+#include "../base/Interaction.h"
 
 namespace artboard
 {
@@ -34,10 +35,14 @@ namespace artboard
     {
         const double w = width.value(), h = height.value();
         const double t01 = mThumb.value();
-        const BoxStyle &track = t01 >= 0.5 ? mStyle.trackOn : mStyle.trackOff;
+        const double hv = hoverAmount();
+        // Blend the track off->on continuously with the thumb (no hard swap at the
+        // midpoint), then apply the shared hover treatment (brighten + border toward on).
+        BoxStyle track = hoverBox(lerpBox(mStyle.trackOff, mStyle.trackOn, t01),
+                                  mStyle.trackOn.paint.fill, hv);
         drawRoundedRect(t, Rect{0, 0, w, h}, track.cornerRadius, track.paint);
 
-        const double r = h * 0.5 - 3.0;
+        const double r = h * 0.5 - 3.0 + hv;  // thumb grows slightly on hover
         const double cx = h * 0.5 + t01 * (w - h);
         drawCircle(t, cx, h * 0.5, r, mStyle.thumb.paint);
     }

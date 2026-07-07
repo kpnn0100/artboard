@@ -85,9 +85,16 @@ package ui {
   class KeyEvent
   abstract class InputController
   class Theme
+  class Interaction <<(F,#88c) free fns>> {
+    + lerpColor / brighten
+    + lerpPaint / lerpBox / hoverBox  ' one shared hover treatment (FR-24)
+  }
   class Segment {
     + render() / renderOverlay()  ' 2nd pass: onOverlay, unclipped
     + raise()  ' move to end of parent children
+    + isHovered() / hoverAmount()  ' animated hover factor (FR-24)
+    + isHoverWithin()  ' self-or-descendant hover (containers)
+    + {static} setHovered(seg) / hoveredSegment()
     # onPaint() / onOverlay()
   }
   class RectangleSegment
@@ -145,6 +152,19 @@ package ui {
   Knob ..> Spring
   Slider ..> Spring
   ComboBox ..> AnimatedProperty
+  ' animated state transitions (FR-25) + shared hover treatment (FR-24)
+  Segment ..> Interaction
+  Segment *--> Property : hoverAmount
+  Button ..> Property
+  Checkbox ..> Property
+  TextBox ..> Property
+  TabView ..> Property
+  TabView ..> Spring
+  ComboBox ..> Spring
+  ScrollView ..> Spring
+  ProgressBar ..> Spring
+  LineGraph ..> Spring
+  Interaction ..> Theme
   ToggleSwitch --|> Segment
   ProgressBar --|> Segment
   ComboBox --|> Segment
@@ -179,7 +199,10 @@ Property *--> AnimatedProperty
 note right of Segment
 Composite UI node.
 Owns animated layout properties,
-shared focus, and recursive input.
+shared focus, hover (single global
+owner + animated hoverAmount), and
+recursive input. A bare Move routes
+to the deepest handler under the pointer.
 end note
 
 note right of Slider

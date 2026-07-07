@@ -5,6 +5,7 @@
 #pragma once
 #include "../base/Segment.h"
 #include "../base/Theme.h"
+#include "../../anim/Spring.h"
 #include <memory>
 
 namespace artboard
@@ -21,6 +22,7 @@ namespace artboard
         void setStyle(const ScrollStyle &style) { mStyle = style; }
 
         void render(IRenderTarget &t, const Transform &parent = Transform::identity()) const override;
+        void advance(double nowMs) override;
 
     protected:
         void onPaint(IRenderTarget &t) const override;
@@ -36,5 +38,7 @@ namespace artboard
         bool mThumbDrag = false;
         double mDragStartOffset = 0.0;
         double mDragStartY = 0.0;
+        double mLastMs = -1.0;
+        Spring mScrollbar{0.0};  // scrollbar emphasis: eases up while hovering the viewport
     };
 }

@@ -18,9 +18,10 @@ namespace artboard
         std::string text;
 
         bool checked() const { return mChecked; }
-        void setChecked(bool checked) { mChecked = checked; }
+        void setChecked(bool checked) { mChecked = checked; mCheck.set(checked ? 1.0 : 0.0); }
         void setStyle(const CheckboxStyle &style);
         void render(IRenderTarget &t, const Transform &parent = Transform::identity()) const override;
+        void advance(double nowMs) override;
 
     protected:
         bool handleGesture(const Gesture &g, const Point &localPoint) override;
@@ -33,6 +34,8 @@ namespace artboard
 
         CheckboxStyle mStyle;
         bool mChecked = false;
+        double mNowMs = 0.0;
+        Property mCheck{0.0};  // animated check grow-in factor [0,1]
         mutable std::shared_ptr<RectangleSegment> mBox;
         mutable std::shared_ptr<RectangleSegment> mIndicator;
         mutable std::shared_ptr<LabelSegment> mLabel;

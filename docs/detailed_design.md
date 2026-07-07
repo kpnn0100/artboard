@@ -10,6 +10,7 @@
 - Render itself and then render children recursively.
 - Convert world-space pointer coordinates to local coordinates using inverse transforms.
 - Participate in a shared focus group.
+- Own hover state and route hover moves (FR-24).
 - Capture child interaction during a press-drag-drop sequence.
 
 ### Important fields
@@ -19,12 +20,23 @@
 - `int focusIndex`
 - `std::vector<std::shared_ptr<Segment>> mChildren`
 - `std::shared_ptr<InputController> mInputController`
+- `bool mHovered, mHoverPrev` + `Property mHoverAmount` — the hover state and its animated
+  `[0,1]` factor (a single global hover owner is held in an anonymous-namespace slot in the .cpp).
 
 ### Important operations
 
 - `render()` composes parent and local transforms, paints self, then paints children.
 - `hitTest()` checks children from topmost to backmost, then checks the local bounds.
 - `onGesture()` delegates to `dispatchGesture()`.
+- `dispatchGesture()` on a bare `Move` (no press capture) recurses to the deepest hit-tested child
+  (as `Down` does) and, at the leaf, calls `setHovered(this)` and delivers the move to the handler;
+  a `Move` during a press still goes to the captured child (FR-24).
+- `advance(nowMs)` first calls `updateHoverAnim(nowMs)`, which eases `mHoverAmount` toward `1`
+  while hovered/`enabled`/`visible` and `0` otherwise (≈120 ms `EaseOutCubic`, reduced-motion-safe),
+  then updates the layout properties and children.
+- `setHovered(seg)` / `hoveredSegment()` manage the one global hover owner (clearing the previous);
+  the destructor relinquishes hover if this segment owned it. `isHovered()` / `hoverAmount()` /
+  `isHoverWithin()` (self-or-descendant) are the read side controls use.
 - `dispatchKey()` routes keyboard events to the focused segment.
 - `requestFocus()` updates the shared focus registry.
 
@@ -171,8 +183,11 @@ Linear layout containers (`ui/base/LinearLayout`, `ui/concrete/Row`, `ui/concret
   coordinate is `padding`. It then auto-sizes the container — main axis to the content extent,
   cross axis to the largest child + `2·padding`; with no visible children both axes collapse to
   `2·padding`.
-- `advance(nowMs)` calls `layout()` then `Segment::advance`. Children use fixed sizes, so the
-  layout is resolved in the same frame.
+- `advance(nowMs)` calls `layout()` then `Segment::advance`. It positions from each child's
+  **current** (already-animated) extent, so when a child's size/visibility animates the layout
+  follows smoothly frame-to-frame; only a child insert/remove reflows in one frame (a layout-level
+  insert/remove animation is out of scope — FR-25 governs a control's own visible state, not
+  container membership churn).
 
 ## 3. `InputController`
 
@@ -220,6 +235,25 @@ types without creating a deep inheritance chain.
 - Warm accent color for active state and caret.
 - Shared outline color for control framing.
 
+## 5a. `ui::interaction` / `Interaction.h` (FR-24)
+
+Header-only, platform-free helpers that define the **one** hover treatment reused by every control,
+plus general colour/paint interpolation. Keeping it in a single place is the interaction
+"consistency lock": hover reads identically framework-wide and needs no per-control theme fields.
+
+### Constants (`namespace interaction`)
+
+- `kHoverMs = 120` — hover fade in/out duration.
+- `kHoverFillLift = 0.14` — fraction a fill brightens toward white at full hover.
+- `kHoverStrokeLift = 0.5` — fraction a border is pulled toward the emphasis colour at full hover.
+
+### Free functions
+
+- `lerpColor(a, b, t)`, `brighten(c, amt)` — colour maths (alpha preserved by `brighten`).
+- `lerpPaint(a, b, t)`, `lerpBox(a, b, t)` — interpolate a whole `Paint` / `BoxStyle`.
+- `hoverBox(base, emphasis, t)` — the standard hover appearance for a box: brighten the fill and
+  pull the stroke toward `emphasis`, scaled by `t` (the control's `hoverAmount()`).
+
 ## 6. `AbstractSlider`
 
 `AbstractSlider` owns slider semantics only.
@@ -256,6 +290,8 @@ types without creating a deep inheritance chain.
 - Pointer down, drag, and click convert local x-position into a slider value.
 - `advance(nowMs)` springs the *displayed* thumb/fill toward the value via a shared `anim::Spring`
   (FR-4d, `omega≈18`, same follower as `Knob`); `displayValue()` exposes the smoothed value.
+- **Hover (FR-24):** the thumb radius grows by `2·hoverAmount()` and its style is
+  `hoverBox(thumb, rangeFill.fill, hoverAmount())` (brighten + border toward the accent).
 - Left and right arrow keys decrement or increment the value.
 - Each of these (and the double-click reset) fires `onChange(value())` with the resulting
   value; a programmatic `setValue()` does **not** fire `onChange` (so syncing controls to
@@ -289,9 +325,13 @@ types without creating a deep inheritance chain.
 
 ### Behavior
 
-- `Down` sets the pressed state.
-- `Click` invokes `onClick`.
+- `Down` sets the pressed state and animates `mPress` toward `1`.
+- `Click`/`Drop` clears it and animates `mPress` toward `0`; `Click` invokes `onClick`.
 - `Enter` or `Space` invokes `onClick`.
+- **Motion/hover (FR-24/FR-25):** `advance()` ticks `mPress`; the body style is
+  `lerpBox(idle, pressed, blend)` where `blend = press + (1-press)·0.4·hoverAmount()` — so the
+  press crossfades and hover nudges the body ~40% toward the themed pressed (accent) look. Nothing
+  snaps.
 
 ## 9. `Checkbox`
 
@@ -303,8 +343,11 @@ types without creating a deep inheritance chain.
 
 ### Behavior
 
-- `Click`, `Enter`, or `Space` toggles the boolean state.
-- The indicator visibility mirrors the checked state.
+- `Click`, `Enter`, or `Space` toggles the boolean state and animates `mCheck` (0↔1).
+- The indicator **grows in/out** from the centre (size scaled by `mCheck`); it is only `visible`
+  while `mCheck > 0.001`, so it never pops. `setChecked()` snaps `mCheck` (programmatic).
+- **Hover (FR-24):** the box uses `hoverBox(box, accent, hoverAmount())` — brighten + border toward
+  the accent (indicator fill).
 
 ## 10. `TextBox`
 
@@ -320,6 +363,9 @@ types without creating a deep inheritance chain.
 - `KeyEvent::Text` appends entered text.
 - `Backspace` removes one character.
 - Read-only mode disables editing.
+- **Motion/hover (FR-24/FR-25):** `advance()` eases `mFocusAmt` (0↔1) on focus change; the box is
+  `hoverBox(lerpBox(idle, focused, focusAmt), accent, hoverAmount())` (focus border blends, hover
+  brightens) and the caret's alpha is scaled by `focusAmt` (fades in on focus, out on blur — no pop).
 
 ### Current simplifications
 
@@ -469,18 +515,25 @@ inline helper in `base/InputController.h`.
   (value drag); double-click on a ring erases that routing, on the dial resets to default.
 - `ModBus` (in `ui/base/`) maps `sourceId → value`; sources publish with `set`, targets read with
   `value`. It is the minimal seam that decouples a `Knob` target from concrete sources.
+- **Hover (FR-24):** the dial uses `hoverBox(dial, valueColor, hoverAmount())` and the value arc
+  colour brightens on hover.
 
 ### 12.2 `ToggleSwitch`
 
 - Boolean `on()`. `Click`/confirm toggles, animates `mThumb` (`AnimatedProperty`, `EaseOutCubic`
   160ms) toward 0/1, fires `onChange(bool)`. `advance(nowMs)` ticks the thumb. Reduced-motion
   (FR-4e) is honored automatically via `AnimatedProperty`.
-- `onPaint` draws the rounded track (color lerps with thumb position) and the moving thumb.
+- `onPaint` draws the rounded track and the moving thumb. **FR-25:** the track is
+  `hoverBox(lerpBox(trackOff, trackOn, t01), trackOn.fill, hoverAmount())` — the off→on colour
+  **blends continuously** with the thumb (no hard swap at the midpoint) and brightens on hover; the
+  thumb radius grows slightly with `hoverAmount()`.
 
 ### 12.3 `ProgressBar`
 
-- Non-interactive; `value()` in `[0,1]`. `onPaint` draws track + clamped fill. `hitTestSelf`
-  returns false (input passes through).
+- Non-interactive; `value()` in `[0,1]`. `hitTestSelf` returns false (input passes through).
+- **FR-25:** `setValue` sets a target; a `Spring mDisplay` eases the **shown** level toward it,
+  ticked in `advance(nowMs)`. `onPaint` draws track + a fill of the shown width (drawn only when
+  `> 1e-4`, so a near-zero level shows no sub-pixel sliver). Reduced-motion snaps via `Spring`.
 
 ### 12.4 `ComboBox`
 
@@ -491,6 +544,10 @@ inline helper in `base/InputController.h`.
   Logical `mOpen` flips immediately so rows are hit-testable during the reveal; the *visual* list
   fades in and slides down by `(1−p)·6px`. `onOverlay` early-outs when `p≈0`. Honors reduced-motion
   (FR-4e) through `AnimatedProperty`.
+- **Hover (FR-24):** a `Move` records the option row under the pointer (`mHoverRow`); `advance`
+  glides a `Spring mRowHiY` to that row and eases a `Spring mRowHiA` (alpha) in only while a row is
+  hovered — so `onOverlay` draws a highlight bar that **glides** between rows and fades, never
+  popping. The field uses `hoverBox(field, caret, hoverAmount())`.
 - `onPaint` draws the field, the selected text, and a caret glyph.
 
 ### 12.5 `TabView`
@@ -498,25 +555,33 @@ inline helper in `base/InputController.h`.
 - `addPage(title, segment)` appends a page; `selectedIndex` chooses the visible page (others have
   `visible=false`). Tab headers are child hit regions; `Click` on a header selects it and fires
   `onChange(index)`. The active page is positioned directly under the tab strip (`y = tabHeight`,
-  no gap). **Unification (FR-21):** `onPaint` draws inactive tabs recessed (started a few px down,
-  shorter) and the active tab full-height extending `tabHeight+10` downward, drawn last; the page
-  (rendered after `onPaint`) covers the overhang, so the active tab merges into the content.
-  If `TabStyle::activeIndicatorHeight > 0`, a filled bar of `activeIndicatorColor` is drawn across
-  the top edge of the active tab only, on top of its body fill. Title colour comes from
-  `labelActive` for the selected tab and `label` for the rest.
+  no gap). **Unification (FR-21):** the active tab is full-height and extends `tabHeight+10`
+  downward; the page (rendered after `onPaint`) covers the overhang, so the active tab merges into
+  the content.
+- **FR-25/FR-24:** per-tab `Property mTabFade` (eased on select, `EaseOutCubic` 180ms) interpolates
+  each tab's geometry (`y = 4·(1−f)`, `hh = (tabHeight−4)+14·f`), box colour (`lerpBox(idle,active,f)`),
+  active-indicator alpha, and title colour (`lerpColor(label,labelActive,f)`) — so selecting a tab
+  **eases** instead of snapping. A per-tab `Spring mTabHover` (driven from the `Move`-tracked
+  `mHoverTab`, cleared when the pointer leaves via `isHovered()`) brightens the tab under the
+  pointer via `hoverBox`. Tabs are drawn least-active-first so the selected one lands on top.
 
 ### 12.6 `ScrollView`
 
 - `setContent(segment)`, `contentHeight`. `clipToBounds = true`; the content child is translated by
-  `-offset`. `Drag` on the body and `Drag` on the scrollbar thumb both change `offset`, clamped to
-  `[0, max(0, contentHeight - height)]`.
-- `onPaint` draws the viewport background + a scrollbar track/thumb sized to the visible fraction.
+  `-offset`. `Drag` on the body and `Drag` on the scrollbar thumb both change `offset` (1:1 direct
+  manipulation, exempt from FR-25), clamped to `[0, max(0, contentHeight - height)]`.
+- **Hover (FR-24):** `advance` eases a `Spring mScrollbar` toward `1` while `isHoverWithin()` (the
+  content child owns hover, so hover-within is used, not this control's own hover); `onPaint` widens
+  the scrollbar (`8 → 10px`) and brightens the thumb by that factor.
 
 ### 12.7 `LineGraph`
 
 - Non-interactive. `setSeries(values)`, `setRange(min,max)`. `onPaint` draws background, horizontal
-  grid lines, an optional filled area, and the series polyline mapped into the bounds. Empty or
-  single-point series draw only the frame.
+  grid lines, an optional filled area, and the polyline. Empty or single-point series draw only the
+  frame.
+- **FR-25:** the shown series is a `std::vector<Spring> mDisplay` that **morphs** toward the target
+  `mSeries` (ticked in `advance`, `omega≈26` so live/streaming data still tracks). A change in point
+  count rebuilds `mDisplay` and lands immediately (a morph across differing counts is ill-defined).
 
 ### 12.8 `ImageView`
 
@@ -528,7 +593,10 @@ inline helper in `base/InputController.h`.
 - `onPaint` (lazy, target-aware): if the target changed or there is no handle yet, `registerImage`
   and cache the handle + target; else if the pixels are dirty, `updateImage`; then `drawImage`
   into `fittedRect()`. It never calls `releaseImage` (the adapter reclaims handles on teardown).
-  `hitTestSelf` returns false — display-only; interactive overlays are separate segments.
+- Zoom/pan (`zoomAbout`, `panBy`, `resetView`) are **direct-manipulation transforms** exempt from
+  FR-25: `fittedRect()` must remain the authoritative *immediate* geometry that overlays align to
+  and hit-testing uses, so it cannot lag behind an easing value. When zoomed (>1×) the view is
+  interactive and a drag pans 1:1; at 1× it is display-only (`hitTestSelf` false, click-through).
 
 ## 13. Traceability to Requirements
 
@@ -556,6 +624,13 @@ inline helper in `base/InputController.h`.
   (`ui/concrete/ImageView`).
 - FR-12 maps to `Knob`, `ToggleSwitch`, `ProgressBar`, `ComboBox`, `TabView`, `ScrollView`, and
   `LineGraph`, one class per file under `ui/concrete/`.
+- FR-24 maps to `Segment` hover state (`mHovered`/`mHoverAmount`, `setHovered`/`hoveredSegment`/
+  `isHovered`/`hoverAmount`/`isHoverWithin`), the bare-`Move` routing in `Segment::dispatchGesture`,
+  and the shared `ui/base/Interaction.h` treatment applied by every interactive control.
+- FR-25 maps to the per-control animation state: `Button::mPress`, `Checkbox::mCheck`,
+  `TextBox::mFocusAmt`, `TabView::mTabFade`/`mTabHover`, `ComboBox::mRowHiY`/`mRowHiA`,
+  `ScrollView::mScrollbar`, `ProgressBar::mDisplay`, `LineGraph::mDisplay`, plus the continuous
+  `ToggleSwitch` track blend — all reduced-motion-safe via `Property`/`Spring`.
 - FR-22 maps to `IRenderTarget::drawText`'s `fontFamily`/`letterSpacingPx` parameters,
   `RecordingTarget` (`DrawOp::fontFamily`/`DrawOp::letterSpacingPx`), the Canvas2D / Cairo
   adapters, and `ui::TextStyle` + `scene::Text` (propagated through `LabelSegment`, `TabView`,

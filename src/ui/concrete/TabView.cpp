@@ -1,4 +1,5 @@
 #include "TabView.h"
+#include "../base/Interaction.h"
 
 namespace artboard
 {
@@ -12,6 +13,8 @@ namespace artboard
     {
         mTitles.push_back(title);
         mPages.push_back(page);
+        mTabFade.emplace_back((int)mTitles.size() - 1 == mSelected ? 1.0 : 0.0);
+        mTabHover.emplace_back(0.0);
         addChild(page);
         syncPages();
     }
@@ -21,8 +24,27 @@ namespace artboard
         if (index >= 0 && index < (int)mTitles.size())
         {
             mSelected = index;
+            // Ease every tab toward its new active state (the transition never snaps).
+            for (int i = 0; i < (int)mTabFade.size(); ++i)
+                mTabFade[i].animateTo(i == mSelected ? 1.0 : 0.0, 180.0, Easing::EaseOutCubic, mNowMs);
             syncPages();
         }
+    }
+
+    void TabView::advance(double nowMs)
+    {
+        const double dt = mLastMs < 0.0 ? 0.0 : (nowMs - mLastMs) / 1000.0;
+        mLastMs = nowMs;
+        mNowMs = nowMs;
+        for (auto &f : mTabFade)
+            f.update(nowMs);
+        const int hov = isHovered() ? mHoverTab : -1;  // clear hover when the pointer leaves
+        for (int i = 0; i < (int)mTabHover.size(); ++i)
+        {
+            mTabHover[i].setTarget(i == hov ? 1.0 : 0.0);
+            mTabHover[i].advance(dt);
+        }
+        Segment::advance(nowMs);
     }
 
     void TabView::syncPages() const
@@ -50,30 +72,47 @@ namespace artboard
         // Inactive tabs are recessed (start a few px down, shorter). The active tab
         // is full height and extends DOWN past the strip; the page (drawn on top of
         // this onPaint) covers the overhang, so the active tab reads as merged with
-        // the content below — a united, connected-tab look.
-        auto drawTab = [&](int i, bool active) {
-            const BoxStyle &bs = active ? mStyle.tabActive : mStyle.tabIdle;
-            const double y = active ? 0.0 : 4.0;
-            const double hh = active ? tabHeight + 10.0 : tabHeight - 4.0;
+        // the content below — a united, connected-tab look. The active/idle geometry
+        // and colour are interpolated by the per-tab fade factor `f` so selecting a
+        // tab eases (never snaps); hover brightens the tab under the pointer.
+        auto tabFade = [&](int i) { return i < (int)mTabFade.size() ? mTabFade[i].value() : (i == mSelected ? 1.0 : 0.0); };
+        auto tabHover = [&](int i) { return i < (int)mTabHover.size() ? mTabHover[i].value() : 0.0; };
+        auto drawTab = [&](int i) {
+            const double f = tabFade(i);
+            const double y = 4.0 * (1.0 - f);          // 4 (idle) -> 0 (active)
+            const double hh = (tabHeight - 4.0) + f * 14.0;  // shorter (idle) -> taller (active)
+            BoxStyle bs = lerpBox(mStyle.tabIdle, mStyle.tabActive, f);
+            bs = hoverBox(bs, mStyle.tabActive.paint.fill, tabHover(i));
             drawRoundedRect(t, Rect{i * tw + 1.0, y, tw - 2.0, hh}, bs.cornerRadius, bs.paint);
-            if (active && mStyle.activeIndicatorHeight > 0.0)
+            if (f > 0.0 && mStyle.activeIndicatorHeight > 0.0)
+            {
+                Color ic = mStyle.activeIndicatorColor;
+                ic.a *= f;
                 drawRoundedRect(t, Rect{i * tw + 1.0, 0.0, tw - 2.0, mStyle.activeIndicatorHeight}, 0.0,
-                                Paint::filled(mStyle.activeIndicatorColor));
-            const TextStyle &ls = active ? mStyle.labelActive : mStyle.label;
-            t.setFill(ls.color);
+                                Paint::filled(ic));
+            }
+            t.setFill(lerpColor(mStyle.label.color, mStyle.labelActive.color, f));
             t.drawText(mTitles[i], i * tw + 10.0, tabHeight * 0.5 + mStyle.label.sizePx * 0.35, mStyle.label.sizePx,
-                       ls.fontFamily, ls.letterSpacingPx);
+                       mStyle.label.fontFamily, mStyle.label.letterSpacingPx);
         };
+        // Draw least-active first so the most-active (selected) tab lands on top.
         for (int i = 0; i < n; ++i)
             if (i != mSelected)
-                drawTab(i, false);
+                drawTab(i);
         if (mSelected >= 0 && mSelected < n)
-            drawTab(mSelected, true);  // active last, on top
+            drawTab(mSelected);
     }
 
     bool TabView::handleGesture(const Gesture &g, const Point &localPoint)
     {
         const int n = (int)mTitles.size();
+        if (g.type == Gesture::Type::Move)
+        {
+            const bool onStrip = n > 0 && localPoint.y <= tabHeight &&
+                                 localPoint.x >= 0.0 && localPoint.x <= width.value();
+            mHoverTab = onStrip ? (int)(localPoint.x / (width.value() / n)) : -1;
+            return Segment::handleGesture(g, localPoint);
+        }
         if (g.type == Gesture::Type::Click && n > 0 && localPoint.y <= tabHeight)
         {
             const double tw = width.value() / n;

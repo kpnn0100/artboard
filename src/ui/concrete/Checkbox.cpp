@@ -1,4 +1,5 @@
 #include "Checkbox.h"
+#include "../base/Interaction.h"
 
 namespace artboard
 {
@@ -20,6 +21,13 @@ namespace artboard
     {
         syncVisuals();
         Segment::render(t, parent);
+    }
+
+    void Checkbox::advance(double nowMs)
+    {
+        mNowMs = nowMs;
+        mCheck.update(nowMs);
+        Segment::advance(nowMs); // drives hoverAmount()
     }
 
     bool Checkbox::handleGesture(const Gesture &g, const Point &localPoint)
@@ -64,16 +72,20 @@ namespace artboard
         ensureVisualTree();
 
         const double side = height.value();
-        mBox->style = mStyle.box;
+        // Hover: brighten the box and pull its border toward the accent (indicator fill).
+        mBox->style = hoverBox(mStyle.box, mStyle.indicator.paint.fill, hoverAmount());
         mBox->width.set(side);
         mBox->height.set(side);
 
+        // The check indicator grows in/out from the centre (it never pops).
+        const double c = mCheck.value();
+        const double isz = (side - 10.0) * c;
         mIndicator->style = mStyle.indicator;
-        mIndicator->visible = mChecked;
-        mIndicator->x.set(5.0);
-        mIndicator->y.set(5.0);
-        mIndicator->width.set(side - 10.0);
-        mIndicator->height.set(side - 10.0);
+        mIndicator->visible = c > 0.001;
+        mIndicator->x.set((side - isz) * 0.5);
+        mIndicator->y.set((side - isz) * 0.5);
+        mIndicator->width.set(isz);
+        mIndicator->height.set(isz);
 
         mLabel->text = text;
         mLabel->style = mStyle.label;
@@ -84,5 +96,6 @@ namespace artboard
     void Checkbox::toggle()
     {
         mChecked = !mChecked;
+        mCheck.animateTo(mChecked ? 1.0 : 0.0, 140.0, Easing::EaseOutCubic, mNowMs);
     }
 }
