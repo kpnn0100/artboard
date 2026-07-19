@@ -750,7 +750,7 @@ TEST(Basic_controls_composition_and_interaction)
 
     RecordingTarget t;
     slider->render(t);
-    CHECK(slider->childCount() == 3);
+    CHECK(slider->childCount() == 5);  // track, rangeFill, subFill, subTick, thumb
     CHECK(t.count(K::SetTransform) >= 3);
 }
 
@@ -1729,6 +1729,22 @@ namespace
         }
         return {worldX + lo, worldX + hi};
     }
+
+    size_t transformCount(const std::vector<DrawOp> &ops)
+    {
+        size_t c = 0;
+        for (const auto &op : ops) if (op.kind == K::SetTransform) ++c;
+        return c;
+    }
+    // World x (translation) of the n-th SetTransform — one per rendered child, in
+    // add order: [0]=slider, [1]=track, [2]=rangeFill, [3]=subFill, [4]=subTick, [5]=thumb.
+    double nthTransformX(const std::vector<DrawOp> &ops, size_t n)
+    {
+        size_t c = 0;
+        for (const auto &op : ops)
+            if (op.kind == K::SetTransform) { if (c == n) return op.transform.e; ++c; }
+        return -1e18;
+    }
 }
 
 TEST(Slider_range_fill_anchors_at_zero_when_range_spans_it)
@@ -1785,6 +1801,47 @@ TEST(Slider_range_fill_still_left_anchored_when_range_excludes_zero)
     auto [lo, hi] = rangeFillXSpan(t.ops());
     CHECK_NEAR(lo, 0.0, 1e-6);
     CHECK_NEAR(hi, 100.0, 1.0);
+}
+
+TEST(Slider_sub_value_reach)
+{
+    // The secondary reference reach: a coloured fill from the thumb to (value+offset)
+    // plus a thin end tick, both easing on their own follower. Range -100..100, width
+    // 200 -> value 0 sits at x=100; +50 at x=150; -50 at x=50.
+    auto sl = std::make_shared<Slider>(Theme::basicTheme().slider);
+    sl->width.set(200.0);
+    sl->setRange(-100.0, 100.0);
+    double now = 0.0;
+    auto settle = [&] { for (int i = 0; i < 70; ++i) { now += 20.0; sl->advance(now); } };
+
+    // No offset -> no reach: only slider, track, rangeFill, thumb are drawn (4 transforms).
+    sl->setValue(0.0); sl->setSubValueOffset(0.0); settle();
+    { RecordingTarget t; sl->render(t); CHECK(transformCount(t.ops()) == 4); }
+
+    // +50 offset -> reach right: fill starts at the thumb (x=100), tick at the end (x=150).
+    sl->setSubValueOffset(50.0); settle();
+    {
+        RecordingTarget t; sl->render(t);
+        CHECK(transformCount(t.ops()) == 6);                    // + subFill + subTick
+        CHECK_NEAR(nthTransformX(t.ops(), 3), 100.0, 1.5);      // subFill x = min(thumb, sub) = thumb
+        CHECK_NEAR(nthTransformX(t.ops(), 4) + 0.8, 150.0, 1.5); // tick centre = reach end (value+offset)
+    }
+
+    // -50 offset -> reach left: fill starts at the sub (x=50), tick at x=50 (negative works).
+    sl->setSubValueOffset(-50.0); settle();
+    {
+        RecordingTarget t; sl->render(t);
+        CHECK(transformCount(t.ops()) == 6);
+        CHECK_NEAR(nthTransformX(t.ops(), 3), 50.0, 1.5);       // subFill x = min(thumb, sub) = sub
+        CHECK_NEAR(nthTransformX(t.ops(), 4) + 0.8, 50.0, 1.5);  // tick centre = reach end
+    }
+
+    // An offset past the range clamps the reach to the track edge (x=200).
+    sl->setSubValueOffset(500.0); settle();
+    {
+        RecordingTarget t; sl->render(t);
+        CHECK_NEAR(nthTransformX(t.ops(), 4) + 0.8, 200.0, 1.5);
+    }
 }
 
 TEST(AbstractSlider_clamp_reversed_range)

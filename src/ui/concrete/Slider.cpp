@@ -42,6 +42,11 @@ namespace artboard
         if (!mDisplayInit) { mDisplay.reset(value()); mDisplayInit = true; }
         mDisplay.setTarget(value());
         mDisplay.advance(dt); // shared critically-damped follower (~0.2s settle, matches Knob)
+        // The reference reach eases to (value + offset) on its own follower, so both the
+        // thumb and the reach end glide (no snap) when the value or the offset changes.
+        if (!mSubDisplayInit) { mSubDisplay.reset(value() + mSubOffset); mSubDisplayInit = true; }
+        mSubDisplay.setTarget(value() + mSubOffset);
+        mSubDisplay.advance(dt);
         Segment::advance(nowMs);
     }
 
@@ -74,6 +79,15 @@ namespace artboard
         const double span = maximum() - minimum();
         if (span <= 0.0) return 0.0;
         double n = (mDisplay.value() - minimum()) / span;
+        return n < 0.0 ? 0.0 : (n > 1.0 ? 1.0 : n);
+    }
+
+    double Slider::subDisplayNormalized() const
+    {
+        if (!mSubDisplayInit) { mSubDisplay.reset(value() + mSubOffset); mSubDisplayInit = true; }
+        const double span = maximum() - minimum();
+        if (span <= 0.0) return 0.0;
+        double n = (mSubDisplay.value() - minimum()) / span;
         return n < 0.0 ? 0.0 : (n > 1.0 ? 1.0 : n);
     }
 
@@ -147,13 +161,19 @@ namespace artboard
         auto self = const_cast<Slider *>(this);
         self->mTrack = std::make_shared<RectangleSegment>();
         self->mRangeFill = std::make_shared<RectangleSegment>();
+        self->mSubFill = std::make_shared<RectangleSegment>();
+        self->mSubTick = std::make_shared<RectangleSegment>();
         self->mThumb = std::make_shared<CircleSegment>();
         self->mTrack->inputTransparent = true;
         self->mRangeFill->inputTransparent = true;
+        self->mSubFill->inputTransparent = true;
+        self->mSubTick->inputTransparent = true;
         self->mThumb->inputTransparent = true;
         self->addChild(self->mTrack);
         self->addChild(self->mRangeFill);
-        self->addChild(self->mThumb);
+        self->addChild(self->mSubFill);   // reference reach, above the range fill
+        self->addChild(self->mSubTick);
+        self->addChild(self->mThumb);     // thumb on top of everything
     }
 
     void Slider::syncVisuals() const
@@ -195,6 +215,32 @@ namespace artboard
         mRangeFill->y.set(trackY);
         mRangeFill->width.set(width.value() * (fillHi - fillLo));
         mRangeFill->height.set(trackHeight);
+
+        // Secondary reference reach: a coloured section from the thumb to the reach end
+        // (value + offset) plus a thin end tick. Both ease with their followers. Hidden
+        // when there is no offset (thumb == reach). Works for a negative offset (reaches
+        // left of the thumb) and over a gradient track alike.
+        const bool showSub = mSubOffset != 0.0;
+        mSubFill->visible = showSub;
+        mSubTick->visible = showSub;
+        if (showSub)
+        {
+            const double subNorm = subDisplayNormalized();
+            const double reachLo = subNorm < normalized ? subNorm : normalized;
+            const double reachHi = subNorm < normalized ? normalized : subNorm;
+            mSubFill->style = {Paint::filled(mSubColor), trackHeight * 0.5};
+            mSubFill->x.set(width.value() * reachLo);
+            mSubFill->y.set(trackY);
+            mSubFill->width.set(width.value() * (reachHi - reachLo));
+            mSubFill->height.set(trackHeight);
+
+            const double tickH = height.value() * 0.55, tickW = 1.6;
+            mSubTick->style = {Paint::filled(mSubColor), 0.8};
+            mSubTick->x.set(width.value() * subNorm - tickW * 0.5);
+            mSubTick->y.set((height.value() - tickH) * 0.5);
+            mSubTick->width.set(tickW);
+            mSubTick->height.set(tickH);
+        }
 
         mThumb->style = hoverBox(mStyle.thumb, mStyle.rangeFill.paint.fill, hv);
         mThumb->x.set(thumbCenter - thumbDiameter * 0.5);

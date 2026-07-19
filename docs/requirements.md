@@ -128,6 +128,11 @@ The framework shall provide baseline implementations for:
   left edge -- it grows right for positive values and left for negative ones, so the fill reads
   as *distance from neutral* rather than *distance from the minimum*. A range that doesn't span
   zero (e.g. `0..100`) fills from the left edge, unchanged.
+  `setSubValueOffset(offset)` (+ `setSubValueColor`) draws an optional **secondary reference
+  reach**: a coloured fill from the thumb to `value + offset` plus a thin end tick, each
+  spring-eased on its own follower (so both glide, no snap). The thumb still marks the *own*
+  value; the reach shows the *effective* total when an external contribution is added on top
+  (e.g. cosmo's group-stacked value). A negative offset reaches left; `0` hides it.
 - `Checkbox`
 - `TextBox`
 

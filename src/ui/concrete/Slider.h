@@ -31,6 +31,15 @@ namespace artboard
          *  the thumb still marks the position. Clear with a transparent pair. */
         void setTrackGradient(const Color &left, const Color &right) { mGradLeft = left; mGradRight = right; mHasGradient = true; }
 
+        /** Secondary "reference reach": a fill of `subValueColor` from the thumb to
+         *  (thumb value + offset), plus a thin end tick, easing with the thumb. `offset`
+         *  is in value units (negative reaches left); 0 hides it. Used to show a value's
+         *  effective total when an external contribution is added on top of the thumb
+         *  (e.g. cosmo's group-stacked value). The thumb still marks the own value. */
+        void setSubValueOffset(double offset) { mSubOffset = offset; }
+        double subValueOffset() const { return mSubOffset; }
+        void setSubValueColor(const Color &color) { mSubColor = color; }
+
         void setStyle(const SliderStyle &style);
         const SliderStyle &style() const { return mStyle; }
         void render(IRenderTarget &t, const Transform &parent = Transform::identity()) const override;
@@ -48,13 +57,20 @@ namespace artboard
         void ensureVisualTree() const;
         void syncVisuals() const;
         double valueForLocalX(double localX) const;
-        double displayNormalized() const;  // spring-smoothed value mapped to [0,1]
+        double displayNormalized() const;     // spring-smoothed value mapped to [0,1]
+        double subDisplayNormalized() const;  // spring-smoothed (value + subOffset) mapped to [0,1]
 
         SliderStyle mStyle;
         bool mClickJumps = true;
         mutable std::shared_ptr<RectangleSegment> mTrack;
         mutable std::shared_ptr<RectangleSegment> mRangeFill;
+        mutable std::shared_ptr<RectangleSegment> mSubFill;  // reference reach thumb -> thumb+offset
+        mutable std::shared_ptr<RectangleSegment> mSubTick;  // thin line at the reach end
         mutable std::shared_ptr<CircleSegment> mThumb;
+        double mSubOffset = 0.0;
+        Color mSubColor{0.298, 0.710, 0.451, 1.0};  // #4cb573 default reference green
+        mutable Spring mSubDisplay;
+        mutable bool mSubDisplayInit = false;
         // Spring-smoothed display value (shared follower, mirrors Knob): the thumb
         // glides to the target instead of snapping. mutable so onPaint can seed it
         // pre-advance.

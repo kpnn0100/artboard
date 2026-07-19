@@ -221,8 +221,13 @@ keeps the seam minimal (a target needs only `value(id)`).
 
 ### 4.2 Slider
 
-- Behavior: value, range, drag semantics, keyboard step adjustments.
-- Visual composition: track rectangle + range fill rectangle + thumb circle.
+- Behavior: value, range, drag semantics, keyboard step adjustments. Optional
+  **secondary reference reach** (`setSubValueOffset`/`setSubValueColor`): a coloured
+  fill from the thumb to `value + offset` plus a thin end tick, each easing on its own
+  follower, for showing a value's effective total when an external contribution is
+  stacked on top (e.g. cosmo's group-stacked value; negative offset reaches left).
+- Visual composition: track rectangle + range fill rectangle + reach fill + reach tick
+  + thumb circle.
 
 ### 4.3 Checkbox
 
