@@ -471,6 +471,17 @@ plus general colour/paint interpolation. Keeping it in a single place is the int
   bundled font registers it with the OS font system itself (e.g. `FcConfigAppFontAddFile` on
   Linux) before the family name is passed in; the HAL only asks the adapter's text stack to
   resolve whatever name it's given.
+- **`measureText(text, sizePx, fontFamily, letterSpacingPx)`** — the read side of
+  `drawText`, for laying out / right- and centre-aligning text without clipping (e.g. placing
+  the accent "." right after the "cosmo" wordmark, or right-aligning a slider's value). It is a
+  HAL primitive for the same reason `drawText` is: advance width needs the font. `IRenderTarget`
+  provides a concrete **default** — a headless estimate (~0.5em per UTF-8 codepoint +
+  letterSpacing between glyphs) used by `RecordingTarget` and any target with no font engine, so
+  it is not a pure method and does not break existing targets. `CairoTarget` overrides it with
+  `cairo_text_extents` (single-run advance when untracked; per-codepoint sum + spacing otherwise,
+  mirroring its `drawText` pen), and `Canvas2DTarget` with `ctx.measureText` (+ manual tracking
+  when the browser lacks `letterSpacing`). Tested headless in `coreTests`
+  (`RenderTarget_measureText_headless_estimate`).
 - `CairoTarget` font resolution on fontconfig-free hosts (Android): the toy
   `cairo_select_font_face` path above requires fontconfig to map a family name to a face, which
   the Android Cairo build omits. Under the `ARTBOARD_CAIRO_FT` compile flag (Android only),

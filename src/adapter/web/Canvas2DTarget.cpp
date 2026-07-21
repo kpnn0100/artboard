@@ -38,6 +38,15 @@ EM_JS(void, ab_text, (const char *s, double x, double y, double size, const char
         if ('letterSpacing' in c) c.letterSpacing = spacing + 'px';
         c.fillText(UTF8ToString(s), x, y); });
 
+EM_JS(double, ab_measure_text, (const char *s, double size, const char *family, double spacing),
+      { var c = window.__abctx; var fam = UTF8ToString(family); var str = UTF8ToString(s);
+        c.font = size + 'px ' + (fam ? ('"' + fam + '", sans-serif') : 'sans-serif');
+        var hasLS = ('letterSpacing' in c);
+        if (hasLS) c.letterSpacing = spacing + 'px';
+        var w = c.measureText(str).width;
+        if (!hasLS && str.length > 1) w += (str.length - 1) * spacing;  // manual tracking fallback
+        return w; });
+
 // Raster images: each id is an offscreen <canvas> in window.__abimg.map. Canvas2D
 // ImageData is straight RGBA8, top-down — exactly the HAL format (no conversion).
 EM_JS(int, ab_registerImage, (uintptr_t ptr, int w, int h), {
@@ -95,6 +104,12 @@ namespace artboard
                                    const std::string &fontFamily, double letterSpacingPx)
     {
         ab_text(text.c_str(), x, y, sizePx, fontFamily.c_str(), letterSpacingPx);
+    }
+
+    double Canvas2DTarget::measureText(const std::string &text, double sizePx,
+                                        const std::string &fontFamily, double letterSpacingPx) const
+    {
+        return ab_measure_text(text.c_str(), sizePx, fontFamily.c_str(), letterSpacingPx);
     }
     int Canvas2DTarget::registerImage(const uint8_t *rgba, int w, int h)
     {

@@ -64,6 +64,24 @@ namespace artboard
         virtual void drawText(const std::string &text, double x, double y, double sizePx,
                                const std::string &fontFamily = "", double letterSpacingPx = 0.0) = 0;
 
+        // Best-effort advance width (px) of `text` at `sizePx` in `fontFamily`, including
+        // `letterSpacingPx` between glyphs — the read side of drawText, for laying out and
+        // right/centre-aligning text without clipping. Adapters with a real text stack
+        // (Cairo, Canvas2D) override this with accurate metrics; the default here is a
+        // size-based estimate for headless/test targets (RecordingTarget) where no font
+        // engine is available. NOT a path op — measurement needs the font, like drawText.
+        virtual double measureText(const std::string &text, double sizePx,
+                                   const std::string &fontFamily = "", double letterSpacingPx = 0.0) const
+        {
+            (void)fontFamily;
+            size_t glyphs = 0;  // count UTF-8 codepoints (skip continuation bytes)
+            for (unsigned char ch : text)
+                if ((ch & 0xC0) != 0x80) ++glyphs;
+            double w = glyphs * sizePx * 0.5;                  // ~0.5em average advance
+            if (glyphs > 1) w += (double)(glyphs - 1) * letterSpacingPx;
+            return w;
+        }
+
         // ---- raster images (handle/registration model) ----
         // A raster image is a primitive: no path/fill/text combination reproduces a
         // photograph's per-pixel colour. The handle model uploads the pixels ONCE

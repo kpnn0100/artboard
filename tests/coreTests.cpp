@@ -2514,4 +2514,16 @@ TEST(LineGraph_series_morph)
     CHECK(none.count(K::StrokePath) == one.count(K::StrokePath));
 }
 
+// measureText: the read side of drawText. RecordingTarget (headless) uses the base
+// IRenderTarget estimate — ~0.5em per UTF-8 codepoint + letterSpacing between glyphs.
+// (Real adapters — Cairo/Canvas2D — override this with their text stack's metrics.)
+TEST(RenderTarget_measureText_headless_estimate)
+{
+    RecordingTarget t;
+    CHECK_NEAR(t.measureText("cosmo", 10.0), 25.0, 1e-9);            // 5 * 10 * 0.5
+    CHECK_NEAR(t.measureText("cosmo", 10.0, "DM Sans", 2.0), 33.0, 1e-9);  // + 4 gaps * 2
+    CHECK_NEAR(t.measureText("", 10.0), 0.0, 1e-9);
+    CHECK(t.measureText("AB", 20.0) > t.measureText("A", 20.0));     // grows with length
+}
+
 int main() { return mini::runAll(); }

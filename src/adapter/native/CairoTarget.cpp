@@ -198,6 +198,42 @@ namespace artboard
         }
     }
 
+    double CairoTarget::measureText(const std::string &text, double sizePx,
+                                     const std::string &fontFamily, double letterSpacingPx) const
+    {
+        if (!mContext) return IRenderTarget::measureText(text, sizePx, fontFamily, letterSpacingPx);
+#ifdef ARTBOARD_CAIRO_FT
+        auto faceIt = ftFaces().find(fontFamily);
+        if (faceIt != ftFaces().end() && faceIt->second)
+            cairo_set_font_face(mContext, faceIt->second);
+        else
+            cairo_select_font_face(mContext, fontFamily.empty() ? "Sans" : fontFamily.c_str(),
+                                    CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+#else
+        cairo_select_font_face(mContext, fontFamily.empty() ? "Sans" : fontFamily.c_str(),
+                                CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+#endif
+        cairo_set_font_size(mContext, sizePx);
+        if (letterSpacingPx == 0.0)
+        {
+            cairo_text_extents_t e;
+            cairo_text_extents(mContext, text.c_str(), &e);
+            return e.x_advance;  // matches drawText's single-show_text fast path
+        }
+        // Tracked text: sum per-codepoint advance + letterSpacing, mirroring drawText's pen.
+        double cx = 0.0;
+        for (size_t i = 0; i < text.size();)
+        {
+            size_t len = std::min(utf8SeqLen(static_cast<unsigned char>(text[i])), text.size() - i);
+            std::string glyph = text.substr(i, len);
+            cairo_text_extents_t e;
+            cairo_text_extents(mContext, glyph.c_str(), &e);
+            cx += e.x_advance + letterSpacingPx;
+            i += len;
+        }
+        return cx;
+    }
+
     CairoTarget::~CairoTarget()
     {
         for (auto &kv : mImages)
