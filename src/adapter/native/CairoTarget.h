@@ -17,6 +17,15 @@ namespace artboard
         void setContext(cairo_t *context) { mContext = context; }
         cairo_t *context() const { return mContext; }
 
+#ifdef ARTBOARD_CAIRO_FT
+        // Register a font family name -> TTF file for hosts without fontconfig (e.g.
+        // Android). drawText then resolves that family through a cairo-ft font face
+        // instead of the "toy" cairo_select_font_face API (which needs fontconfig).
+        // Call once per family at startup. When ARTBOARD_CAIRO_FT is not defined (the
+        // desktop/GTK build) this does not exist and drawText behaves exactly as before.
+        static void registerFontFile(const std::string &family, const std::string &ttfPath);
+#endif
+
         void save() override;
         void restore() override;
         void setTransform(const Transform &t) override;

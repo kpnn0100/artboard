@@ -471,6 +471,17 @@ plus general colour/paint interpolation. Keeping it in a single place is the int
   bundled font registers it with the OS font system itself (e.g. `FcConfigAppFontAddFile` on
   Linux) before the family name is passed in; the HAL only asks the adapter's text stack to
   resolve whatever name it's given.
+- `CairoTarget` font resolution on fontconfig-free hosts (Android): the toy
+  `cairo_select_font_face` path above requires fontconfig to map a family name to a face, which
+  the Android Cairo build omits. Under the `ARTBOARD_CAIRO_FT` compile flag (Android only),
+  `CairoTarget` gains a static `registerFontFile(family, ttfPath)` that builds a
+  `cairo_ft_font_face_create_for_ft_face` from a FreeType face and caches it by family; `drawText`
+  then prefers a registered face via `cairo_set_font_face`, falling back to `cairo_select_font_face`
+  for any unregistered family. This is an adapter-internal, opt-in addition — it does **not** touch
+  the `IRenderTarget` HAL, so no other adapter changes, and the desktop/GTK build (flag off) is
+  byte-for-byte the prior toy-API path. The host registers each bundled family once at startup
+  (the Android host extracts the DM Sans / JetBrains Mono TTFs from APK assets and calls
+  `registerFontFile`), mirroring what `FcConfigAppFontAddFile` does on Linux.
 
 ### Propagation to `ui::TextStyle`
 

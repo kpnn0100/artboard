@@ -11,7 +11,12 @@ packages and one adapter package:
 - `input`: pointer abstraction, gesture recognition, and generic routing.
 - `scene`: freeform drawing objects built from `Drawable`.
 - `ui`: interactive object model built from `Segment`, style objects, and basic controls.
-- `adapter/web`: backend implementation for Canvas2D.
+- `adapter/web`: backend implementation for Canvas2D (Emscripten).
+- `adapter/native`: `CairoTarget`, the Cairo `IRenderTarget`. Used by the desktop/GTK hosts and
+  **reused unchanged on Android** — the Android host (cosmo) renders the UI into a Cairo image
+  surface and blits the ARGB buffer to an `ANativeWindow` via GLES, so the on-screen result is
+  identical to desktop. The only Android-specific seam is an opt-in `ARTBOARD_CAIRO_FT` font
+  path (fontconfig is absent on Android); see `detailed_design.md`. No `IRenderTarget` change.
 
 ## 2. Key Architectural Decisions
 

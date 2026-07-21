@@ -1,8 +1,43 @@
 #include "CairoTarget.h"
 #include <algorithm>
 
+#ifdef ARTBOARD_CAIRO_FT
+#include <cairo/cairo-ft.h>
+#include <ft2build.h>
+#include FT_FREETYPE_H
+#include <map>
+#include <string>
+#endif
+
 namespace artboard
 {
+#ifdef ARTBOARD_CAIRO_FT
+    namespace
+    {
+        // Process-wide FreeType library + family -> cairo font face cache. Populated once
+        // at startup via CairoTarget::registerFontFile; read (only) from drawText. The
+        // FT_Face and cairo_font_face_t live for the process lifetime (never freed).
+        FT_Library &ftLib()
+        {
+            static FT_Library lib = [] { FT_Library l = nullptr; FT_Init_FreeType(&l); return l; }();
+            return lib;
+        }
+        std::map<std::string, cairo_font_face_t *> &ftFaces()
+        {
+            static std::map<std::string, cairo_font_face_t *> m;
+            return m;
+        }
+    }
+
+    void CairoTarget::registerFontFile(const std::string &family, const std::string &ttfPath)
+    {
+        if (family.empty() || ftFaces().count(family)) return;
+        FT_Face face = nullptr;
+        if (FT_New_Face(ftLib(), ttfPath.c_str(), 0, &face) != 0 || !face) return;
+        ftFaces()[family] = cairo_ft_font_face_create_for_ft_face(face, 0);
+    }
+#endif
+
     void CairoTarget::save()
     {
         cairo_save(mContext);
@@ -124,8 +159,19 @@ namespace artboard
     void CairoTarget::drawText(const std::string &text, double x, double y, double sizePx,
                                 const std::string &fontFamily, double letterSpacingPx)
     {
+#ifdef ARTBOARD_CAIRO_FT
+        // Prefer an explicitly registered cairo-ft face (fontconfig-free hosts); fall
+        // back to the toy API for any unregistered family.
+        auto faceIt = ftFaces().find(fontFamily);
+        if (faceIt != ftFaces().end() && faceIt->second)
+            cairo_set_font_face(mContext, faceIt->second);
+        else
+            cairo_select_font_face(mContext, fontFamily.empty() ? "Sans" : fontFamily.c_str(),
+                                    CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+#else
         cairo_select_font_face(mContext, fontFamily.empty() ? "Sans" : fontFamily.c_str(),
                                 CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+#endif
         cairo_set_font_size(mContext, sizePx);
 
         if (letterSpacingPx == 0.0)
