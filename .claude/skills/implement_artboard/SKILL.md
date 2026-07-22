@@ -170,6 +170,16 @@ here; the taste does. Apply them to any new or changed control, panel, or app sc
   `AnimatedProperty` / `Property` / `Spring` and confirm it actually moves across frames — never
   ship a half-built tween that snaps. If you can't drive it in the available scope, ship the clean
   static end-state instead.
+- **Selection, tab, and press transitions animate specifically (not just "generally").** A moving
+  selection — a tab bar, a `SegmentedControl`, a list/section highlight — MUST **slide** its
+  highlight box / underline to the newly-selected item (animate x/width via `Property`/`Spring`)
+  **or** cross-fade its colour to the new highlight; repainting the active state at its new place
+  in one frame is a bug. Switching tab/section **content** slides the new content in (eased
+  horizontal translate ± cross-fade), never an instant swap. Every button/tappable shows an
+  **animated press response** (background wash or subtle scale) on press-down and eases back on
+  release/cancel. A fixed bar (e.g. a bottom tab bar) **stays put while an attached panel/sheet
+  slides behind it** — the bar does not ride with the sheet. Assert one of these with a
+  `RecordingTarget` sample at t=0/mid/end where practical.
 - **Ease, don't lerp-linear.** Use `Easing::EaseOut*` / `Spring` for UI motion (position, size,
   reveal); linear reads mechanical. Keep durations short (≈120–220 ms).
 - **Reduced motion is mandatory.** Honor `artboard::reducedMotion()`: when set, motion collapses
