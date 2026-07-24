@@ -15,7 +15,7 @@ The system covers:
 - Pointer and keyboard interaction through platform-free input abstractions.
 - Composite UI objects through `Segment`.
 - A baseline theme and basic controls: `Button`, `Slider`, `Checkbox`, and `TextBox`.
-- A rectangular clip primitive on the render HAL, and clip-to-bounds for segments.
+- A rectangular and path clip primitive on the render HAL, and clip-to-bounds for segments.
 - An extended widget set: `Knob`, `ToggleSwitch`, `ProgressBar`, `ComboBox`, `TabView`,
   `ScrollView`, and `LineGraph`.
 
@@ -434,6 +434,18 @@ pointer itself is the animation. Concretely:
 - `LineGraph` — the plotted series **morphs** toward a newly set series (fast, so live/streaming
   data still tracks); a change in point count lands immediately (a morph across differing counts
   is ill-defined).
+
+### FR-26 Path clip primitive
+
+The render HAL shall provide a path clip primitive `clipPath()` that intersects the current clip
+region with the **current path** (built by `beginPath`/`moveTo`/`lineTo`/`quadTo`/`cubicTo`/
+`closePath`, per FR-16), using the nonzero winding rule, in the current transform space. Like
+`clipRect` (FR-11), the clip is scoped by the `save()`/`restore()` state stack. After `clipPath()`
+the current path is cleared — the same "fresh path" postcondition `clipRect` already leaves — so
+drawing after a clip starts from empty. This is a HAL extension because an arbitrary clip region
+(rounded-rect, circular/squircle icon mask, free-form shape) cannot be expressed by `clipRect` or
+by any fill/stroke/path combination alone — only a true clip primitive restricts where later
+drawing is visible.
 
 ## 4. Non-functional Requirements
 

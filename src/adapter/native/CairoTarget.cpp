@@ -62,6 +62,16 @@ namespace artboard
         cairo_clip(mContext);
     }
 
+    // cairo_clip() (non-preserve) clears the current path as a side effect -- exactly the
+    // "fresh path" postcondition clipPath() requires, mirroring clipRect(). Fill rule set
+    // explicitly to nonzero (already Cairo's default) so the contract does not silently depend
+    // on nothing else in the process ever changing it.
+    void CairoTarget::clipPath()
+    {
+        cairo_set_fill_rule(mContext, CAIRO_FILL_RULE_WINDING);
+        cairo_clip(mContext);
+    }
+
     void CairoTarget::setFill(const Color &c)
     {
         cairo_set_source_rgba(mContext, c.r, c.g, c.b, c.a);

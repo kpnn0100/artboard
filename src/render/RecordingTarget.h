@@ -14,7 +14,7 @@ namespace artboard
     {
         enum class Kind
         {
-            Save, Restore, SetTransform, ClipRect, SetFill, SetRadialFill, SetLinearFill, SetStroke,
+            Save, Restore, SetTransform, ClipRect, ClipPath, SetFill, SetRadialFill, SetLinearFill, SetStroke,
             BeginPath, MoveTo, LineTo, QuadTo, CubicTo, ClosePath,
             FillPath, StrokePath, DrawText,
             RegisterImage, UpdateImage, DrawImage, ReleaseImage
@@ -41,6 +41,7 @@ namespace artboard
         void restore() override;
         void setTransform(const Transform &t) override;
         void clipRect(double x, double y, double w, double h) override;
+        void clipPath() override;
         void setFill(const Color &c) override;
         void setRadialFill(double cx, double cy, double radius, const Color &inner, const Color &outer) override;
         void setLinearFill(double x0, double y0, double x1, double y1, const Color &start, const Color &end) override;

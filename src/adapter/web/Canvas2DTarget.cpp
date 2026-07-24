@@ -10,6 +10,9 @@ EM_JS(void, ab_xform, (double a, double b, double c, double d, double e, double 
       { window.__abctx.setTransform(a, b, c, d, e, f); });
 EM_JS(void, ab_clip, (double x, double y, double w, double h),
       { var c = window.__abctx; c.beginPath(); c.rect(x, y, w, h); c.clip(); });
+// clip() alone does NOT clear Canvas2D's current path (unlike Cairo's cairo_clip(), which does);
+// the trailing beginPath() matches that postcondition so both adapters leave identical state.
+EM_JS(void, ab_clipPath, (), { var c = window.__abctx; c.clip(); c.beginPath(); });
 EM_JS(void, ab_fillStyle, (double r, double g, double b, double a),
       { window.__abctx.fillStyle = 'rgba(' + (r * 255 | 0) + ',' + (g * 255 | 0) + ',' + (b * 255 | 0) + ',' + a + ')'; });
 EM_JS(void, ab_radialFill, (double cx, double cy, double rad, double ir, double ig, double ib, double ia, double orr, double og, double ob, double oa),
@@ -82,6 +85,7 @@ namespace artboard
     void Canvas2DTarget::restore() { ab_restore(); }
     void Canvas2DTarget::setTransform(const Transform &t) { ab_xform(t.a, t.b, t.c, t.d, t.e, t.f); }
     void Canvas2DTarget::clipRect(double x, double y, double w, double h) { ab_clip(x, y, w, h); }
+    void Canvas2DTarget::clipPath() { ab_clipPath(); }
     void Canvas2DTarget::setFill(const Color &c) { ab_fillStyle(c.r, c.g, c.b, c.a); }
     void Canvas2DTarget::setRadialFill(double cx, double cy, double radius, const Color &inner, const Color &outer)
     {

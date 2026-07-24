@@ -27,6 +27,14 @@ namespace artboard
         // transform space). Scoped by save()/restore(). A clip is a primitive
         // because no fill/stroke/path combination can restrict later drawing.
         virtual void clipRect(double x, double y, double w, double h) = 0;
+        // Intersect the current clip region with the CURRENT PATH (nonzero winding), in the
+        // current transform space. Unlike clipRect (which builds its own rectangle), this clips
+        // using whatever path the caller already built via beginPath/moveTo/.../closePath -- the
+        // same current path fillPath/strokePath paint (FR-16). Scoped by save()/restore(); after
+        // clipPath() the current path is cleared (the same "fresh path" postcondition clipRect
+        // leaves). A primitive because an arbitrary (rounded-rect, circular, free-form) clip
+        // region cannot be expressed by clipRect or any fill/stroke/path combination alone.
+        virtual void clipPath() = 0;
 
         // ---- paint ----
         virtual void setFill(const Color &c) = 0;

@@ -131,6 +131,13 @@ state under `reducedMotion()`.
   because solid fills can only approximate it by stacking translucent shapes (which bands); every
   adapter maps it to a native gradient (Canvas2D `createRadialGradient`, Cairo radial pattern), so
   glows fade continuously to zero opacity. `RecordingTarget` records it.
+- It also exposes a **path clip** primitive, `clipPath()`, which intersects the current clip with
+  the current path (nonzero winding) instead of an axis-aligned rectangle — the primitive rounded
+  rects, circles, and free-form clip regions need, since `clipRect` only covers rectangles. Like
+  `clipRect`, it is scoped by `save()`/`restore()` and leaves a cleared ("fresh") path afterward.
+  Cairo's `cairo_clip()` clears the path as a side effect already; `Canvas2DTarget` clears it with
+  an explicit trailing `beginPath()` (`ctx.clip()` alone does not clear Canvas2D's path) so both
+  adapters leave the identical postcondition — the platform-independence trade-off rule in action.
 - It exposes a second paint-server primitive, `setLinearFill(x0,y0,x1,y1,start,end)` — a two-stop
   linear gradient along an axis that the next `fillPath()` uses. Same justification as the radial
   fill (a smooth ramp can't be built from solid fills without banding); every adapter maps it to a
@@ -303,4 +310,5 @@ keeps the seam minimal (a target needs only `value(id)`).
   not report its metrics back to the caller).
 - No constraint/flow layout containers yet, so sizing and placement remain explicit at the
   segment level (widgets size themselves but are positioned by the app).
-- Clipping is rectangular only (no arbitrary path clip / soft masks yet).
+- Clipping covers axis-aligned rects (`clipRect`) and arbitrary paths (`clipPath`, nonzero
+  winding); soft/anti-aliased masks (e.g. a blurred clip edge) are not yet supported.

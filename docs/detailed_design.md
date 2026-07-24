@@ -382,6 +382,31 @@ plus general colour/paint interpolation. Keeping it in a single place is the int
 - `Canvas2DTarget` maps it to `ctx.beginPath(); ctx.rect(...); ctx.clip()`.
 - `CairoTarget` maps it to `cairo_rectangle(...); cairo_clip()`.
 
+## 11a. Path-clip primitive
+
+### HAL
+
+- `IRenderTarget::clipPath()` intersects the current clip with the **current path** (nonzero
+  winding), in the current transform space, scoped by `save()`/`restore()`. Unlike `clipRect`,
+  which builds its own internal rectangle path, `clipPath()` clips using whatever path the caller
+  already built via `beginPath`/`moveTo`/`lineTo`/`quadTo`/`cubicTo`/`closePath` — the same
+  "current path" `fillPath`/`strokePath` paint (FR-16). The caller builds the path, then calls
+  `clipPath()` instead of `fillPath()`/`strokePath()`.
+- `RecordingTarget` records `DrawOp::Kind::ClipPath` with no extra fields — the preceding
+  `MoveTo`/`LineTo`/`QuadTo`/`CubicTo`/`ClosePath` ops already in the stream capture the clipped
+  shape, so a test asserts the whole op sequence rather than parameters on the clip op itself.
+- `CairoTarget::clipPath()` sets the fill rule to `CAIRO_FILL_RULE_WINDING` (nonzero — already
+  Cairo's default, set explicitly so the primitive's contract does not depend on no other call
+  ever changing it) and calls `cairo_clip()`. Cairo clears the current path as a side effect of
+  `cairo_clip()` (the non-`_preserve` variant, mirroring `cairo_fill`/`cairo_stroke`), which is
+  exactly the "fresh path" postcondition the primitive requires — no extra call needed.
+- `Canvas2DTarget::clipPath()` calls `ctx.clip()` (default nonzero winding) using whatever path is
+  already built on the context, **then an explicit trailing `ctx.beginPath()`** — Canvas2D's
+  `clip()` does *not* clear the current path the way Cairo's does, so without the extra call the
+  two adapters would leave different path state after an identical primitive call. This is the
+  platform-independence trade-off rule (§3 of the skill / NFR-1): identical behavior wins, and the
+  (trivial) extra cost lands on the adapter that needs it.
+
 ## 11b. Radial-gradient fill
 
 ### HAL
@@ -630,6 +655,8 @@ inline helper in `base/InputController.h`.
 - FR-9 maps to the split between `AbstractSlider` and `Slider`.
 - FR-11 maps to `IRenderTarget::clipRect`, `RecordingTarget`, the two adapters, and
   `Segment::clipToBounds`.
+- FR-26 maps to `IRenderTarget::clipPath`, `RecordingTarget` (`DrawOp::Kind::ClipPath`), and the
+  Canvas2D / Cairo adapters.
 - FR-13 maps to `IRenderTarget::setRadialFill`, `RecordingTarget` (+ `DrawOp::color2`), and the
   Canvas2D / Cairo adapters.
 - FR-17 maps to `IRenderTarget::setLinearFill`, `RecordingTarget` (`DrawOp::Kind::SetLinearFill`,

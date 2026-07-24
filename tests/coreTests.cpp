@@ -993,6 +993,45 @@ TEST(RecordingTarget_setLinearFill_records)
     CHECK(op.color == start);
     CHECK(op.color2 == end);
 }
+TEST(RecordingTarget_clipPath_records)
+{
+    RecordingTarget rec;
+    rec.clipPath();
+    CHECK(rec.count(K::ClipPath) == 1);
+    CHECK(rec.ops()[0].kind == K::ClipPath);
+}
+TEST(RecordingTarget_clipPath_after_path_build_full_sequence)
+{
+    // A realistic call: build a path, then clip to it instead of filling/stroking -- assert
+    // the whole op sequence (order + args) so the primitive is proven to compose correctly
+    // with the existing path-building ops (FR-16) rather than just recording in isolation.
+    RecordingTarget rec;
+    rec.save();
+    rec.beginPath();
+    rec.moveTo(0, 0);
+    rec.lineTo(10, 0);
+    rec.lineTo(5, 10);
+    rec.closePath();
+    rec.clipPath();
+    rec.beginPath(); // caller starts a fresh path post-clip, matching clipRect's convention
+    rec.moveTo(1, 1);
+    rec.lineTo(2, 2);
+
+    const auto &ops = rec.ops();
+    CHECK(ops.size() == 10);
+    CHECK(ops[0].kind == K::Save);
+    CHECK(ops[1].kind == K::BeginPath);
+    CHECK(ops[2].kind == K::MoveTo);
+    CHECK(ops[3].kind == K::LineTo);
+    CHECK(ops[4].kind == K::LineTo);
+    CHECK(ops[5].kind == K::ClosePath);
+    CHECK(ops[6].kind == K::ClipPath);
+    CHECK(ops[7].kind == K::BeginPath);
+    CHECK(ops[8].kind == K::MoveTo);
+    CHECK_NEAR(ops[8].args[0], 1.0, 1e-9);
+    CHECK(ops[9].kind == K::LineTo);
+    CHECK_NEAR(ops[9].args[0], 2.0, 1e-9);
+}
 TEST(ModBus_set_value_clear)
 {
     ModBus b;
