@@ -16,6 +16,7 @@ The system covers:
 - Composite UI objects through `Segment`.
 - A baseline theme and basic controls: `Button`, `Slider`, `Checkbox`, and `TextBox`.
 - A rectangular and path clip primitive on the render HAL, and clip-to-bounds for segments.
+- An opacity-group compositing primitive (`pushLayer`/`popLayer`) on the render HAL.
 - An extended widget set: `Knob`, `ToggleSwitch`, `ProgressBar`, `ComboBox`, `TabView`,
   `ScrollView`, and `LineGraph`.
 
@@ -446,6 +447,19 @@ drawing after a clip starts from empty. This is a HAL extension because an arbit
 (rounded-rect, circular/squircle icon mask, free-form shape) cannot be expressed by `clipRect` or
 by any fill/stroke/path combination alone — only a true clip primitive restricts where later
 drawing is visible.
+
+### FR-27 Opacity layer (group compositing)
+
+The render HAL shall provide an opacity-group primitive: `pushLayer(alpha)` begins redirecting
+all subsequent drawing into an intermediate group, and the matching `popLayer()` composites that
+whole group into the destination at `alpha` in one operation. Overlapping shapes drawn inside the
+layer therefore blend with each other at full opacity first, and only the combined result fades
+by `alpha` — unlike drawing each shape individually at reduced alpha, which double-blends any
+overlap. `pushLayer`/`popLayer` bracket their own graphics-state scope (transform, clip, and paint
+changes made inside do not leak past the matching `popLayer()`), mirroring `save()`/`restore()`.
+Calls nest: each `pushLayer` must be matched by exactly one `popLayer()`, innermost-first. This is
+a HAL extension because compositing an overlapping group as one unit at a shared alpha cannot be
+expressed by per-primitive fill/stroke alpha alone.
 
 ## 4. Non-functional Requirements
 

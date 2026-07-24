@@ -13,6 +13,45 @@ EM_JS(void, ab_clip, (double x, double y, double w, double h),
 // clip() alone does NOT clear Canvas2D's current path (unlike Cairo's cairo_clip(), which does);
 // the trailing beginPath() matches that postcondition so both adapters leave identical state.
 EM_JS(void, ab_clipPath, (), { var c = window.__abctx; c.clip(); c.beginPath(); });
+
+// Opacity layer (group compositing): Canvas2D has no native push-group call, so each layer is
+// an offscreen <canvas> the same size as the current target. Every ab_* drawing function above
+// already reads window.__abctx fresh on each call, so redirecting THAT ONE BINDING for the
+// layer's lifetime redirects every primitive automatically -- no other function needs to change.
+EM_JS(void, ab_pushLayer, (double alpha), {
+    if (!window.__abLayerStack) window.__abLayerStack = [];
+    var prev = window.__abctx;
+    var cv = document.createElement('canvas');
+    cv.width = prev.canvas.width;
+    cv.height = prev.canvas.height;
+    var ctx = cv.getContext('2d');
+    // Copy transform + paint state so content drawn in the layer positions/paints exactly as it
+    // would on the destination (Cairo's push_group does this automatically via cairo_save()).
+    ctx.setTransform(prev.getTransform());
+    ctx.fillStyle = prev.fillStyle;
+    ctx.strokeStyle = prev.strokeStyle;
+    ctx.lineWidth = prev.lineWidth;
+    ctx.font = prev.font;
+    window.__abLayerStack.push({ ctx: prev, alpha: alpha });
+    window.__abctx = ctx;
+});
+EM_JS(void, ab_popLayer, (), {
+    if (!window.__abLayerStack || window.__abLayerStack.length === 0) return;
+    var layerCanvas = window.__abctx.canvas;
+    var top = window.__abLayerStack.pop();
+    var dest = top.ctx;
+    window.__abctx = dest;
+    // The layer canvas's pixels are already positioned in device space (its transform matched
+    // the destination's at push time), so composite with an identity transform -- applying the
+    // destination's current transform again would transform it a second time. dest's own active
+    // clip (untouched throughout, since all layer drawing happened on the separate offscreen
+    // context) still constrains this drawImage, matching Cairo's resumed pre-push clip.
+    dest.save();
+    dest.setTransform(1, 0, 0, 1, 0, 0);
+    dest.globalAlpha = top.alpha;
+    dest.drawImage(layerCanvas, 0, 0);
+    dest.restore();
+});
 EM_JS(void, ab_fillStyle, (double r, double g, double b, double a),
       { window.__abctx.fillStyle = 'rgba(' + (r * 255 | 0) + ',' + (g * 255 | 0) + ',' + (b * 255 | 0) + ',' + a + ')'; });
 EM_JS(void, ab_radialFill, (double cx, double cy, double rad, double ir, double ig, double ib, double ia, double orr, double og, double ob, double oa),
@@ -86,6 +125,8 @@ namespace artboard
     void Canvas2DTarget::setTransform(const Transform &t) { ab_xform(t.a, t.b, t.c, t.d, t.e, t.f); }
     void Canvas2DTarget::clipRect(double x, double y, double w, double h) { ab_clip(x, y, w, h); }
     void Canvas2DTarget::clipPath() { ab_clipPath(); }
+    void Canvas2DTarget::pushLayer(double alpha) { ab_pushLayer(alpha); }
+    void Canvas2DTarget::popLayer() { ab_popLayer(); }
     void Canvas2DTarget::setFill(const Color &c) { ab_fillStyle(c.r, c.g, c.b, c.a); }
     void Canvas2DTarget::setRadialFill(double cx, double cy, double radius, const Color &inner, const Color &outer)
     {

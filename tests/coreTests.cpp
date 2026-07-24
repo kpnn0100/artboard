@@ -1032,6 +1032,42 @@ TEST(RecordingTarget_clipPath_after_path_build_full_sequence)
     CHECK(ops[9].kind == K::LineTo);
     CHECK_NEAR(ops[9].args[0], 2.0, 1e-9);
 }
+TEST(RecordingTarget_pushLayer_popLayer_records)
+{
+    RecordingTarget rec;
+    rec.pushLayer(0.5);
+    rec.beginPath();
+    rec.moveTo(0, 0);
+    rec.lineTo(10, 10);
+    rec.fillPath();
+    rec.popLayer();
+
+    CHECK(rec.count(K::PushLayer) == 1);
+    CHECK(rec.count(K::PopLayer) == 1);
+    const auto &ops = rec.ops();
+    CHECK(ops.size() == 6);
+    CHECK(ops[0].kind == K::PushLayer);
+    CHECK_NEAR(ops[0].args[0], 0.5, 1e-9);
+    CHECK(ops[5].kind == K::PopLayer);
+}
+TEST(RecordingTarget_pushLayer_nested_order)
+{
+    // Two nested layers must record push/pop in LIFO-consistent call order (the adapter, not
+    // RecordingTarget, enforces the actual stack balance -- this proves the op stream faithfully
+    // preserves nesting order for that adapter logic to rely on).
+    RecordingTarget rec;
+    rec.pushLayer(0.8);   // outer
+    rec.pushLayer(0.3);   // inner
+    rec.popLayer();       // closes inner
+    rec.popLayer();       // closes outer
+
+    const auto &ops = rec.ops();
+    CHECK(ops.size() == 4);
+    CHECK(ops[0].kind == K::PushLayer); CHECK_NEAR(ops[0].args[0], 0.8, 1e-9);
+    CHECK(ops[1].kind == K::PushLayer); CHECK_NEAR(ops[1].args[0], 0.3, 1e-9);
+    CHECK(ops[2].kind == K::PopLayer);
+    CHECK(ops[3].kind == K::PopLayer);
+}
 TEST(ModBus_set_value_clear)
 {
     ModBus b;

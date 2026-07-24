@@ -37,6 +37,7 @@ package render {
   interface IRenderTarget {
     +clipRect(x,y,w,h)
     +clipPath()
+    +pushLayer(alpha) / popLayer()
     +setRadialFill(cx,cy,r,inner,outer)
     +setLinearFill(x0,y0,x1,y1,start,end)
     +drawText(text,x,y,sizePx,fontFamily,letterSpacingPx)

@@ -20,6 +20,13 @@ namespace artboard
         mOps.push_back(op);
     }
     void RecordingTarget::clipPath() { mOps.push_back({K::ClipPath}); }
+    void RecordingTarget::pushLayer(double alpha)
+    {
+        DrawOp op{K::PushLayer};
+        op.args[0] = alpha;
+        mOps.push_back(op);
+    }
+    void RecordingTarget::popLayer() { mOps.push_back({K::PopLayer}); }
     void RecordingTarget::setFill(const Color &c)
     {
         DrawOp op{K::SetFill};

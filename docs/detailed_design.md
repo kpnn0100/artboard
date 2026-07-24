@@ -530,6 +530,53 @@ plus general colour/paint interpolation. Keeping it in a single place is the int
 - `scene::Text` (the freeform drawable) gained the same two fields for parity with `TextStyle`,
   forwarded in `Text::onDraw`.
 
+## 11e. Opacity layer (group compositing)
+
+### HAL
+
+- `IRenderTarget::pushLayer(alpha)` / `popLayer()` bracket a region of drawing that must be
+  composited as one unit at `alpha` — the primitive a panel/card fade-in needs when its content
+  has overlapping shapes (a group fade), which per-shape alpha cannot express without double-
+  blending the overlap. `popLayer()` takes no arguments; the adapter remembers the alpha its
+  matching `pushLayer` was given.
+- `RecordingTarget` records `DrawOp::Kind::PushLayer` (`args[0] = alpha`) and `DrawOp::Kind::
+  PopLayer` (no fields) — the ops in between are whatever the caller recorded, so a test asserts
+  the whole bracketed sequence the same way it asserts a `clipPath()` sequence (§11a).
+- `CairoTarget::pushLayer` keeps a `std::vector<double> mLayerAlphas` (LIFO) and calls
+  `cairo_push_group()`. `popLayer()` pops the remembered alpha, calls
+  `cairo_pop_group_to_source()` (which composites all drawing since the matching push into a
+  pattern and installs it as the current source — restoring every other piece of graphics state
+  to what it was before the push, since `cairo_push_group`/`cairo_pop_group` already bracket an
+  implicit `cairo_save`/`cairo_restore` pair), then `cairo_paint_with_alpha(alpha)` to blend that
+  pattern into the destination. An unbalanced `popLayer()` (empty `mLayerAlphas`) is a no-op guard,
+  matching the codebase's existing style of tolerating calls on unknown/absent handles (e.g.
+  `releaseImage`) rather than asserting.
+- `Canvas2DTarget` has no native group-compositing call, so it builds the same contract from an
+  offscreen `<canvas>` stack (`window.__abLayerStack`), reusing the existing pattern where every
+  draw primitive already reads the mutable `window.__abctx` fresh on each call:
+  - `pushLayer(alpha)`: create an offscreen canvas the same pixel size as the current
+    `window.__abctx.canvas`, copy the current transform (`getTransform()`/`setTransform()`) and
+    paint state (`fillStyle`/`strokeStyle`/`lineWidth`/`font`) into its 2D context so drawing
+    inside the layer positions and paints exactly as it would on the destination, push
+    `{ctx: <previous __abctx>, alpha}` onto the stack, then reassign `window.__abctx` to the new
+    offscreen context. Every existing `ab_*` drawing function needs **no changes** — they all
+    already read `window.__abctx` fresh, so redirecting that one binding redirects every
+    primitive automatically.
+  - `popLayer()`: pop the stack frame, restore `window.__abctx` to the destination context, then
+    `dest.save(); dest.setTransform(identity); dest.globalAlpha = alpha; dest.drawImage(layerCanvas,
+    0, 0); dest.restore();` — an identity transform during the composite blit because the layer
+    canvas's pixels are already positioned in device space (its transform matched the
+    destination's at push time); applying the destination's current transform again would
+    transform it twice. The destination's own active clip (untouched throughout, since all layer
+    drawing happened on the separate offscreen context) still applies to this `drawImage`, so
+    content is correctly constrained by whatever clip was active before the `pushLayer` — matching
+    Cairo's behavior of resuming the pre-push clip on `cairo_pop_group_to_source`'s implicit
+    restore.
+  - An unbalanced `popLayer()` (empty stack) is a no-op guard, same style as the Cairo adapter.
+- Nesting: both adapters generalize to arbitrary nesting for free — Cairo's group stack is
+  internal to the library; the Canvas2D stack's `prev = window.__abctx` captures whichever layer
+  (or the real destination) was active, so a nested `pushLayer` layers correctly on top.
+
 ## 12. Extended widgets (`ui/concrete/`)
 
 File layout: the `ui` module is one class per file, split into `ui/base/` (foundations +
@@ -657,6 +704,8 @@ inline helper in `base/InputController.h`.
   `Segment::clipToBounds`.
 - FR-26 maps to `IRenderTarget::clipPath`, `RecordingTarget` (`DrawOp::Kind::ClipPath`), and the
   Canvas2D / Cairo adapters.
+- FR-27 maps to `IRenderTarget::{pushLayer,popLayer}`, `RecordingTarget` (`DrawOp::Kind::
+  {PushLayer,PopLayer}`), and the Canvas2D / Cairo adapters.
 - FR-13 maps to `IRenderTarget::setRadialFill`, `RecordingTarget` (+ `DrawOp::color2`), and the
   Canvas2D / Cairo adapters.
 - FR-17 maps to `IRenderTarget::setLinearFill`, `RecordingTarget` (`DrawOp::Kind::SetLinearFill`,

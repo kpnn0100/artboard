@@ -36,6 +36,17 @@ namespace artboard
         // region cannot be expressed by clipRect or any fill/stroke/path combination alone.
         virtual void clipPath() = 0;
 
+        // ---- opacity layer (group compositing) ----
+        // Redirect all drawing until the matching popLayer() into an intermediate group;
+        // popLayer() composites that whole group into the destination at `alpha` in one
+        // operation, so overlapping shapes drawn inside blend with each other first and only
+        // the combined result fades (unlike fading each shape individually, which double-
+        // blends any overlap). Brackets its own graphics-state scope like save()/restore()
+        // (transform/clip/paint changes inside do not leak past popLayer()). Nestable; each
+        // pushLayer() must be matched by exactly one popLayer(), innermost-first.
+        virtual void pushLayer(double alpha) = 0;
+        virtual void popLayer() = 0;
+
         // ---- paint ----
         virtual void setFill(const Color &c) = 0;
         // Two-stop radial gradient fill (inner at centre -> outer at radius, current

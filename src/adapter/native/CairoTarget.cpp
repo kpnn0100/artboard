@@ -72,6 +72,26 @@ namespace artboard
         cairo_clip(mContext);
     }
 
+    // cairo_push_group()/cairo_pop_group_to_source() already bracket an implicit
+    // cairo_save()/cairo_restore() pair, so nothing else needs to be saved/restored here --
+    // any transform/clip/paint change made between push and pop is undone by the pop, matching
+    // this primitive's save()/restore()-like state-scope contract.
+    void CairoTarget::pushLayer(double alpha)
+    {
+        mLayerAlphas.push_back(alpha);
+        cairo_push_group(mContext);
+    }
+
+    void CairoTarget::popLayer()
+    {
+        if (mLayerAlphas.empty())
+            return;  // unbalanced call: tolerate like releaseImage does for an unknown id
+        const double alpha = mLayerAlphas.back();
+        mLayerAlphas.pop_back();
+        cairo_pop_group_to_source(mContext);
+        cairo_paint_with_alpha(mContext, alpha);
+    }
+
     void CairoTarget::setFill(const Color &c)
     {
         cairo_set_source_rgba(mContext, c.r, c.g, c.b, c.a);

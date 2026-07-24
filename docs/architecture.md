@@ -138,6 +138,17 @@ state under `reducedMotion()`.
   Cairo's `cairo_clip()` clears the path as a side effect already; `Canvas2DTarget` clears it with
   an explicit trailing `beginPath()` (`ctx.clip()` alone does not clear Canvas2D's path) so both
   adapters leave the identical postcondition — the platform-independence trade-off rule in action.
+- It also exposes an **opacity-group** primitive, `pushLayer(alpha)` / `popLayer()`, that composites
+  everything drawn between the two calls as one group at `alpha` — so overlapping shapes inside the
+  layer blend with each other first and only the combined result fades, unlike fading each shape
+  individually (which double-blends overlaps). `CairoTarget` maps it directly to
+  `cairo_push_group`/`cairo_pop_group_to_source` + `cairo_paint_with_alpha` (which already brackets
+  its own save/restore-equivalent state scope). `Canvas2DTarget` has no native group primitive, so
+  it builds one from an offscreen `<canvas>` per layer: drawing calls are redirected to the
+  offscreen context (copying the destination's current transform/paint state in first) until
+  `popLayer()`, which composites the offscreen canvas back with `globalAlpha` under an identity
+  transform. `RecordingTarget` records both calls (`PushLayer` carries `alpha`; `PopLayer` takes
+  none) so tests can assert the whole bracketed sequence.
 - It exposes a second paint-server primitive, `setLinearFill(x0,y0,x1,y1,start,end)` — a two-stop
   linear gradient along an axis that the next `fillPath()` uses. Same justification as the radial
   fill (a smooth ramp can't be built from solid fills without banding); every adapter maps it to a
