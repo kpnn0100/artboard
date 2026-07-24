@@ -224,6 +224,49 @@ Linear layout containers (`ui/base/LinearLayout`, `ui/concrete/Row`, `ui/concret
 This supports reusable behavior injection when behavior should be shared across multiple segment
 types without creating a deep inheritance chain.
 
+## 3a. `GestureRecognizer` touch extensions (FR-28)
+
+### `touch` carry-through
+
+`RawPointer` gains `bool touch = false`; `GestureRecognizer::feed` records it (`mTouch`,
+alongside the existing `mAlt`/`mShift`/`mCtrl`) and `emit()` carries it onto every synthesized
+`Gesture`, exactly like the existing modifier flags.
+
+### Long press
+
+- New state: `mDownTimeMs`, `mLongPressFired`, `mLongPressMs` (default 500, `setLongPressMs`).
+- `Down` resets `mLongPressFired = false` and records `mDownTimeMs = e.timeMs`.
+- `advance(nowMs)`: if `mPressed && !mDragging && !mLongPressFired && (nowMs - mDownTimeMs) >=
+  mLongPressMs`, emits `Gesture::Type::LongPress` at `mDownPos` and sets `mLongPressFired = true`
+  (fires at most once per press). A no-op otherwise (not pressed, already dragging — a drag has
+  its own semantics — or already fired).
+- `Up`: if `mLongPressFired`, the existing `Click`/`DoubleClick` branch is skipped (only `Up` is
+  emitted) — a press that long-pressed does not also register as a regular tap.
+
+### Fling (velocity tracking)
+
+- New state: `mVelocitySamples` (a `std::vector<{timeMs, pos}>`), `mVelocityWindowMs` (default
+  100, `setVelocityWindowMs`), `mFlingThreshold` (default 400 px/s, `setFlingVelocityThreshold`).
+- `Down` clears `mVelocitySamples`.
+- `Move` while `mDragging`: after emitting `Drag`, appends `{e.timeMs, e.pos}` to
+  `mVelocitySamples` and prunes samples older than `e.timeMs - mVelocityWindowMs`.
+- `Up` while `mDragging` (before the existing `Drop` emission's sample state is cleared): if
+  `mVelocitySamples` has at least one remaining sample and the elapsed time to it is > 0,
+  computes `velocity = (upPos - oldestSample.pos) / elapsedSeconds`; if
+  `hypot(velocity.x, velocity.y) > mFlingThreshold`, emits `Gesture::Type::Fling` with that
+  `velocity`, **after** the existing `Drop` emission (additive — every existing `Drop` consumer
+  is unaffected; a kinetic control also listens for `Fling`).
+
+### Touch hover suppression (FR-24 addendum)
+
+`Segment::dispatchGesture`'s `Move` case still routes a touch-flagged bare `Move` to the deepest
+hit-tested handler (unchanged hit-testing), but skips the `setHovered(this)` call when
+`g.touch == true` — a touchscreen has no ambient "resting over" state, so a touch drag must not
+leave a control looking permanently hovered once the finger lifts. `LongPress` routes like
+`DragStart`/`Drag` (to the captured child, without releasing capture — the press is still held);
+`Fling` routes like `Click`/`DoubleClick`/`RightClick` (a fresh hit-test), since by the time it is
+dispatched the preceding `Drop` has already released capture.
+
 ## 4. Visual Segment Primitives
 
 ### 4.1 `RectangleSegment`
@@ -772,6 +815,9 @@ inline helper in `base/InputController.h`.
   `Easing.cpp`, and the named constants in `anim/MotionTokens.h`.
 - FR-30 maps to `drawShadow`/`drawElevation` in `scene/Shapes.h`/`.cpp`, composed from
   `IRenderTarget::setLinearFill`/`setRadialFill`.
+- FR-28 maps to `RawPointer::touch`/`Gesture::touch`/`Gesture::velocity`, the new
+  `Gesture::Type::{LongPress,Fling}` values, `GestureRecognizer::advance` + its long-press/fling
+  state, and the touch check in `Segment::dispatchGesture`'s `Move` case.
 - FR-13 maps to `IRenderTarget::setRadialFill`, `RecordingTarget` (+ `DrawOp::color2`), and the
   Canvas2D / Cairo adapters.
 - FR-17 maps to `IRenderTarget::setLinearFill`, `RecordingTarget` (`DrawOp::Kind::SetLinearFill`,

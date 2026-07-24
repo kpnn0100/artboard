@@ -496,6 +496,31 @@ softer, lighter "ambient" layer) scaled by `elevationDp`, both via `drawShadow`.
 platform-free (no HAL change): it is expressible entirely from primitives every adapter already
 implements, so it renders identically everywhere per NFR-1.
 
+### FR-28 Touch input: velocity, fling, and long-press
+
+`RawPointer` carries a `touch` flag (adapter-set; false for mouse/pointer input, true for a
+touchscreen source) alongside its existing `alt`/`shift`/`ctrl` modifiers; `GestureRecognizer`
+carries it onto every synthesized `Gesture` the same way. This is the seam a touch-first shell
+needs: a control can tell "no ambient hover exists for this event" without a separate input
+channel.
+
+- **Long press.** The recognizer gains `advance(nowMs)`, ticked once per frame by the host
+  (mirroring `Segment`/`Spring`/`Animator`). While a press is held without crossing the drag
+  threshold, `advance` emits one `Gesture::Type::LongPress` at the press position after
+  `longPressMs` (default 500ms, `setLongPressMs`) elapses; it fires at most once per press. A
+  press that long-presses does not also emit `Click`/`DoubleClick` on release (only `Up`).
+- **Fling.** While dragging, the recognizer keeps a short rolling window (default 100ms,
+  `setVelocityWindowMs`) of recent `(time, position)` samples. On release, if the window spans a
+  measurable time and the resulting speed exceeds `flingVelocityThreshold` (default 400px/s,
+  `setFlingVelocityThreshold`), the recognizer emits `Gesture::Type::Fling` (carrying the
+  computed `velocity` in px/s, in addition to the existing terminal `Drop`) so a kinetic
+  scrolling control (FR-29) can continue the motion after release.
+- **Touch suppresses ambient hover (FR-24 addendum).** A bare `Move` with `touch == true` is
+  still routed to the deepest hit-tested handler (so a control can react to raw touch position),
+  but `Segment::dispatchGesture` does **not** call `setHovered` for it — a touchscreen has no
+  ambient "pointer resting over a control" concept, so a touch drag must not leave a control
+  looking permanently hovered afterward.
+
 ## 4. Non-functional Requirements
 
 ### NFR-1 Platform independence

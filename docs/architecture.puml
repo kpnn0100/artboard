@@ -60,9 +60,17 @@ package render {
 
 package input {
   enum PointerButton
-  class RawPointer
-  class Gesture
-  class GestureRecognizer
+  class RawPointer {
+    + touch : bool  ' FR-28
+  }
+  class Gesture {
+    + touch : bool
+    + velocity : Point  ' set for Fling
+  }
+  class GestureRecognizer {
+    + advance(nowMs)  ' long-press timeout + fling emission (FR-28)
+    + setLongPressMs() / setFlingVelocityThreshold() / setVelocityWindowMs()
+  }
   interface InputTarget
   class InputRouter
   GestureRecognizer ..> RawPointer

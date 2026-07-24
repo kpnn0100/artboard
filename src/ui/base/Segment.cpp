@@ -320,12 +320,17 @@ namespace artboard
                 return mCapturedChild->dispatchGesture(g);
             if (Segment *child = topmostChildAt(g.pos))
                 return child->dispatchGesture(g);
-            setHovered(this); // leaf under the cursor owns hover (or clears it onto background)
+            // A touchscreen has no ambient "resting over" state (FR-28 addendum to FR-24): a
+            // touch-flagged move still hit-tests down to the deepest handler above, but does not
+            // become the hover owner, so a touch drag can't leave a control stuck looking hovered.
+            if (!g.touch)
+                setHovered(this); // leaf under the cursor owns hover (or clears it onto background)
             return handleGesture(g, toLocal(g.pos));
         case Gesture::Type::DragStart:
         case Gesture::Type::Drag:
         case Gesture::Type::Up:
         case Gesture::Type::Drop:
+        case Gesture::Type::LongPress: // still mid-press: route like Drag, keep the capture
             if (mCapturedChild)
             {
                 const bool handled = mCapturedChild->dispatchGesture(g);
@@ -337,6 +342,7 @@ namespace artboard
         case Gesture::Type::Click:
         case Gesture::Type::DoubleClick:
         case Gesture::Type::RightClick:
+        case Gesture::Type::Fling: // capture already released by the preceding Drop: fresh hit-test
             if (Segment *child = topmostChildAt(g.pos))
                 return child->dispatchGesture(g);
             break;

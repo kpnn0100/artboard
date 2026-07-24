@@ -200,6 +200,15 @@ state under `reducedMotion()`.
 - `GestureRecognizer` converts raw pointer samples into gestures.
 - `InputRouter` handles z-order routing and press capture.
 - `KeyEvent` lives in the UI layer because only controls currently depend on it.
+- **Touch (FR-28).** `RawPointer`/`Gesture` carry a `touch` flag through the same mechanism as
+  the existing modifier flags. `GestureRecognizer` gains a time-tick, `advance(nowMs)` (the input
+  module's counterpart to `Segment`/`Spring`/`Animator`'s own `advance`), so it can emit a
+  `LongPress` after a held, non-dragging press crosses a duration threshold without waiting for
+  another pointer event. It also tracks a short rolling window of recent drag samples and, on
+  release, emits a `Fling` (carrying a computed velocity) alongside the existing `Drop` when the
+  release speed clears a threshold — the seam a kinetic `ScrollView` (FR-29) continues motion
+  from. `Segment::dispatchGesture` treats a touch-flagged bare `Move` like any other for hit-test
+  routing but does not set ambient hover from it (a touchscreen has no "resting over" concept).
 
 ### 3.5 `scene`
 

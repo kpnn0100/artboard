@@ -1038,6 +1038,173 @@ TEST(Gesture_hover_move)
     silent.feed({RawPointer::Kind::Down, {0, 0}, PB::Left, 0});
 }
 
+TEST(Gesture_touch_flag_passthrough)
+{
+    RawPointer down{RawPointer::Kind::Down, {5, 5}, PB::Left, 100};
+    down.touch = true;
+    auto g = recordGestures([&](GestureRecognizer &r) {
+        r.feed(down);
+        r.feed({RawPointer::Kind::Up, {5, 5}, PB::Left, 120}); // touch defaults false here
+    });
+    bool downTouch = false, clickTouch = true;
+    for (const auto &e : g)
+    {
+        if (e.type == GT::Down) downTouch = e.touch;
+        if (e.type == GT::Click) clickTouch = e.touch; // reflects the releasing event, like alt/shift/ctrl
+    }
+    CHECK(downTouch == true);
+    CHECK(clickTouch == false);
+}
+
+TEST(Gesture_longPress_fires_once_and_suppresses_click)
+{
+    auto g = recordGestures([](GestureRecognizer &r) {
+        r.feed({RawPointer::Kind::Down, {5, 5}, PB::Left, 0});
+        r.advance(100);   // well before the 500ms default -> nothing yet
+        r.advance(499);   // still just under
+        r.advance(500);   // threshold crossed -> LongPress fires
+        r.advance(600);   // must not fire again
+        r.feed({RawPointer::Kind::Up, {5, 5}, PB::Left, 650}); // Up only, no Click (long-pressed)
+    });
+    CHECK(countG(g, GT::LongPress) == 1);
+    CHECK(countG(g, GT::Up) == 1);
+    CHECK(countG(g, GT::Click) == 0);
+}
+TEST(Gesture_longPress_not_fired_before_threshold_or_after_release)
+{
+    auto g = recordGestures([](GestureRecognizer &r) {
+        r.feed({RawPointer::Kind::Down, {5, 5}, PB::Left, 0});
+        r.advance(300); // under default 500ms
+        r.feed({RawPointer::Kind::Up, {5, 5}, PB::Left, 320}); // normal click before long-press
+        r.advance(900); // no press active any more -> must not fire
+    });
+    CHECK(countG(g, GT::LongPress) == 0);
+    CHECK(countG(g, GT::Click) == 1);
+}
+TEST(Gesture_longPress_suppressed_by_drag)
+{
+    auto g = recordGestures([](GestureRecognizer &r) {
+        r.setDragThreshold(5);
+        r.feed({RawPointer::Kind::Down, {0, 0}, PB::Left, 0});
+        r.feed({RawPointer::Kind::Move, {20, 0}, PB::Left, 10}); // crosses drag threshold
+        r.advance(600); // past the long-press window, but now dragging -> must not fire
+        r.feed({RawPointer::Kind::Up, {20, 0}, PB::Left, 700});
+    });
+    CHECK(countG(g, GT::LongPress) == 0);
+    CHECK(countG(g, GT::DragStart) == 1);
+}
+TEST(Gesture_longPress_custom_threshold)
+{
+    auto g = recordGestures([](GestureRecognizer &r) {
+        r.setLongPressMs(100);
+        r.feed({RawPointer::Kind::Down, {0, 0}, PB::Left, 0});
+        r.advance(100);
+    });
+    CHECK(countG(g, GT::LongPress) == 1);
+}
+
+TEST(Gesture_fling_emitted_on_fast_release)
+{
+    auto g = recordGestures([](GestureRecognizer &r) {
+        r.setDragThreshold(5);
+        r.feed({RawPointer::Kind::Down, {0, 0}, PB::Left, 0});
+        r.feed({RawPointer::Kind::Move, {50, 0}, PB::Left, 10});   // DragStart + sample
+        r.feed({RawPointer::Kind::Move, {500, 0}, PB::Left, 20});  // fast sample: 450px/10ms=45000px/s
+        r.feed({RawPointer::Kind::Up,   {500, 0}, PB::Left, 20});
+    });
+    CHECK(countG(g, GT::Drop) == 1);
+    CHECK(countG(g, GT::Fling) == 1);
+    for (const auto &e : g)
+        if (e.type == GT::Fling)
+            CHECK(e.velocity.x > 400.0); // well past the 400px/s default threshold, positive x
+}
+TEST(Gesture_fling_not_emitted_on_slow_release)
+{
+    auto g = recordGestures([](GestureRecognizer &r) {
+        r.setDragThreshold(5);
+        r.feed({RawPointer::Kind::Down, {0, 0}, PB::Left, 0});
+        r.feed({RawPointer::Kind::Move, {20, 0}, PB::Left, 100});  // crosses threshold, sample at t=100
+        r.feed({RawPointer::Kind::Up,   {28, 0}, PB::Left, 140});  // (28-20)px / 0.04s = 200px/s, sub-threshold
+    });
+    CHECK(countG(g, GT::Drop) == 1);
+    CHECK(countG(g, GT::Fling) == 0);
+}
+TEST(Gesture_fling_velocity_window_uses_recent_samples_only)
+{
+    // A long, slow drag followed by a fast final flick within the velocity window must fling:
+    // pruning drops the old t=10 sample once t=1000's sample is added, so the release velocity
+    // is computed from the last ~20ms flick (10000px/s) rather than the whole 1010ms drag's
+    // average (~203px/s, which would be BELOW the 400px/s threshold and would NOT fling) --
+    // this is what actually proves the pruning changes the threshold decision, not just the
+    // reported number.
+    auto g = recordGestures([](GestureRecognizer &r) {
+        r.setDragThreshold(5);
+        r.setVelocityWindowMs(50);
+        r.feed({RawPointer::Kind::Down, {0, 0}, PB::Left, 0});
+        r.feed({RawPointer::Kind::Move, {10, 0}, PB::Left, 10});     // DragStart, sample{10,(10,0)}
+        r.feed({RawPointer::Kind::Move, {15, 0}, PB::Left, 1000});   // slow; prunes the t=10 sample
+        r.feed({RawPointer::Kind::Move, {215, 0}, PB::Left, 1020});  // fast flick within the window
+        r.feed({RawPointer::Kind::Up,   {215, 0}, PB::Left, 1020});
+    });
+    CHECK(countG(g, GT::Fling) == 1);
+    for (const auto &e : g)
+        if (e.type == GT::Fling)
+            CHECK(e.velocity.x > 1000.0); // ~10000px/s from the pruned window, not ~203px/s unpruned
+}
+TEST(Gesture_fling_not_emitted_without_drag)
+{
+    // A plain click (no drag at all) must never emit Fling even if release is instantaneous.
+    auto g = recordGestures([](GestureRecognizer &r) {
+        r.feed({RawPointer::Kind::Down, {5, 5}, PB::Left, 0});
+        r.feed({RawPointer::Kind::Up, {5, 5}, PB::Left, 1});
+    });
+    CHECK(countG(g, GT::Fling) == 0);
+}
+
+TEST(Segment_touch_move_does_not_set_hover)
+{
+    auto root = std::make_shared<Segment>(); root->width.set(100); root->height.set(100);
+    Gesture touchMove{GT::Move, {10, 10}, {10, 10}, PB::Left};
+    touchMove.touch = true;
+    root->onGesture(touchMove);
+    CHECK(!root->isHovered()); // touch never becomes the ambient hover owner (FR-28 addendum)
+
+    Gesture mouseMove{GT::Move, {10, 10}, {10, 10}, PB::Left};
+    mouseMove.touch = false;
+    root->onGesture(mouseMove);
+    CHECK(root->isHovered()); // mouse hover is unaffected
+    Segment::setHovered(nullptr);
+}
+TEST(Segment_longPress_routes_to_captured_child_fling_routes_fresh)
+{
+    auto root = std::make_shared<Segment>(); root->width.set(100); root->height.set(100);
+    auto a = std::make_shared<Segment>(); a->width.set(100); a->height.set(100);
+    root->addChild(a);
+
+    int aLongPress = 0;
+    struct Probe : Segment
+    {
+        int *counter;
+        bool handleGesture(const Gesture &g, const Point &) override
+        {
+            if (g.type == GT::LongPress) ++*counter;
+            return true;
+        }
+    };
+    auto probe = std::make_shared<Probe>();
+    probe->counter = &aLongPress;
+    probe->width.set(100); probe->height.set(100);
+    auto probeRoot = std::make_shared<Segment>(); probeRoot->width.set(100); probeRoot->height.set(100);
+    probeRoot->addChild(probe);
+
+    probeRoot->onGesture({GT::Down, {10, 10}, {10, 10}, PB::Left});      // captures probe
+    probeRoot->onGesture({GT::LongPress, {10, 10}, {10, 10}, PB::Left}); // routed to captured child
+    CHECK(aLongPress == 1);
+    probeRoot->onGesture({GT::Up, {10, 10}, {10, 10}, PB::Left});        // releases capture
+    probeRoot->onGesture({GT::Fling, {10, 10}, {10, 10}, PB::Left});     // fresh hit-test (no capture left)
+    CHECK(aLongPress == 1); // Fling isn't a LongPress, but must not crash / must hit-test cleanly
+}
+
 // ───────────────────────── input: InputRouter ─────────────────────────
 TEST(InputRouter_topmost_capture_and_miss)
 {
