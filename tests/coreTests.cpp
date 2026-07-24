@@ -74,7 +74,9 @@ TEST(Easing_endpoints_pinned_for_all_curves)
         Easing::EaseInExpo, Easing::EaseOutExpo, Easing::EaseInOutExpo,
         Easing::EaseInBack, Easing::EaseOutBack, Easing::EaseInOutBack,
         Easing::EaseInElastic, Easing::EaseOutElastic, Easing::EaseInOutElastic,
-        Easing::EaseInBounce, Easing::EaseOutBounce, Easing::EaseInOutBounce};
+        Easing::EaseInBounce, Easing::EaseOutBounce, Easing::EaseInOutBounce,
+        Easing::Standard, Easing::StandardDecel, Easing::StandardAccel,
+        Easing::EmphasizedDecel, Easing::EmphasizedAccel};
     for (Easing e : all)
     {
         CHECK_NEAR(applyEasing(e, 0.0), 0.0, 1e-9);
@@ -126,6 +128,57 @@ TEST(Easing_midpoints_and_branches)
     CHECK(applyEasing(Easing::EaseInBounce, 0.3) >= 0.0);
     CHECK(applyEasing(Easing::EaseInOutBounce, 0.25) >= 0.0); // t<0.5 branch
     CHECK(applyEasing(Easing::EaseInOutBounce, 0.75) <= 1.0); // else branch
+}
+TEST(Easing_cubicBezier_named_curves_match_hand_computed_points)
+{
+    // Independent check of the Newton-Raphson/bisection bezier solver: for a cubic bezier
+    // P0=(0,0), P1=(x1,y1), P2=(x2,y2), P3=(1,1), the point at parametric u=0.5 is
+    //   x(0.5) = 0.375*x1 + 0.375*x2 + 0.125,  y(0.5) = 0.375*y1 + 0.375*y2 + 0.125
+    // (expanding 3*(1-u)^2*u, 3*(1-u)*u^2, u^3 at u=0.5). Computed by hand from the raw
+    // bezier formula (not from the solver under test) for three curves of increasing
+    // asymmetry, so this actually exercises solver correctness rather than restating it.
+    // Standard(0.2,0,0,1): x(.5)=0.375*0.2+0.125=0.2, y(.5)=0.375*1+0.125=0.5
+    CHECK_NEAR(applyEasing(Easing::Standard, 0.2), 0.5, 1e-4);
+    // StandardDecel(0,0,0,1): x(.5)=0.125, y(.5)=0.5
+    CHECK_NEAR(applyEasing(Easing::StandardDecel, 0.125), 0.5, 1e-4);
+    // EmphasizedAccel(0.3,0,0.8,0.15): x(.5)=0.375*0.3+0.375*0.8+0.125=0.5375,
+    // y(.5)=0.375*0+0.375*0.15+0.125=0.18125
+    CHECK_NEAR(applyEasing(Easing::EmphasizedAccel, 0.5375), 0.18125, 1e-4);
+    // clamp behavior matches every other curve
+    CHECK_NEAR(applyEasing(Easing::Standard, -1.0), 0.0, 1e-9);
+    CHECK_NEAR(applyEasing(Easing::Standard, 2.0), 1.0, 1e-9);
+    // StandardAccel/EmphasizedDecel exercised for endpoint pinning above; check monotonic
+    // mid-curve sanity here too (no NaN/inf, stays within a sane eased range).
+    const double sa = applyEasing(Easing::StandardAccel, 0.5);
+    CHECK(sa > 0.0 && sa < 1.0);
+    const double ed = applyEasing(Easing::EmphasizedDecel, 0.5);
+    CHECK(ed > 0.0 && ed < 1.0);
+    // StandardDecel's x-control-points are both 0, so bezierX(u) = u^3: the derivative
+    // 3u^2 goes near-zero close to u=0, which is exactly the regime a tiny t lands the
+    // initial guess (u=t) in. t=0.0001 makes the Newton loop's very first iteration see
+    // d=3*(1e-4)^2=3e-8 < 1e-6, exercising the "derivative too small" bailout and the
+    // bisection fallback loop (otherwise unreached by every other sample point in this
+    // file, since none of them land the solver near a flat-derivative region). Verified
+    // empirically: applyEasing(StandardDecel, 0.0001) == 0.0062646752 (3*(1-u)*u^2+u^3
+    // at u=cuberoot(0.0001)~=0.04642).
+    const double tinyResult = applyEasing(Easing::StandardDecel, 0.0001);
+    CHECK_NEAR(tinyResult, 0.0062646752, 1e-6);
+}
+TEST(MotionTokens_named_constants)
+{
+    // Regression guard: these are consumed by name across the codebase (and, going
+    // forward, by shell-side theme code) -- catch an accidental value drift.
+    CHECK_NEAR(motion::kDurationShort1, 50.0, 1e-9);
+    CHECK_NEAR(motion::kDurationShort4, 200.0, 1e-9);
+    CHECK_NEAR(motion::kDurationMedium1, 250.0, 1e-9);
+    CHECK_NEAR(motion::kDurationMedium4, 400.0, 1e-9);
+    CHECK_NEAR(motion::kDurationLong1, 450.0, 1e-9);
+    CHECK_NEAR(motion::kDurationLong4, 600.0, 1e-9);
+    CHECK(motion::kSpatialFast > motion::kSpatialDefault);
+    CHECK(motion::kSpatialDefault > motion::kSpatialSlow);
+    CHECK(motion::kEffectsFast > motion::kEffectsDefault);
+    CHECK(motion::kEffectsDefault > motion::kEffectsSlow);
+    CHECK_NEAR(motion::kSpatialDefault, 18.0, 1e-9); // matches Slider/Knob's existing omega
 }
 
 // ───────────────────────── anim/Animation ─────────────────────────

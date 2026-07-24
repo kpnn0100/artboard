@@ -12,7 +12,15 @@ package core {
 }
 
 package anim {
-  enum Easing
+  enum Easing {
+    + Standard / StandardDecel / StandardAccel
+    + EmphasizedDecel / EmphasizedAccel  ' cubic-bezier curves, FR-31
+  }
+  class "MotionTokens" as MotionTokens <<(F,#88c) named constants>> {
+    + kDurationShort1..4 / Medium1..4 / Long1..4
+    + kSpatialFast/Default/Slow
+    + kEffectsFast/Default/Slow  ' Spring omega presets
+  }
   class Animation
   class Tween
   class AnimatedProperty

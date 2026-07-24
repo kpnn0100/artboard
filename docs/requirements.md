@@ -461,6 +461,25 @@ Calls nest: each `pushLayer` must be matched by exactly one `popLayer()`, innerm
 a HAL extension because compositing an overlapping group as one unit at a shared alpha cannot be
 expressed by per-primitive fill/stroke alpha alone.
 
+### FR-31 Motion token vocabulary
+
+The framework shall expose a shared named vocabulary of durations, easing curves, and spring
+settle-speed presets so applications share one motion language instead of hand-picking ad hoc
+constants per control:
+
+- `Easing` gains five additional named cubic-bezier curves — `Standard`, `StandardDecel`,
+  `StandardAccel`, `EmphasizedDecel`, `EmphasizedAccel` — evaluated by solving the bezier's
+  `x(u) = t` for the parameter `u` (Newton-Raphson with a bisection fallback) and returning
+  `y(u)`, so arbitrary (not just the existing closed-form) easing shapes are expressible; they
+  honor the same `[0,1]` input clamp and `0`-at-`0`/`1`-at-`1` pinning as every other curve
+  (FR-4a).
+- `motion::kDurationShort1..4`, `kDurationMedium1..4`, `kDurationLong1..4` name a short/medium/
+  long millisecond duration scale.
+- `motion::kSpatialFast/Default/Slow` and `motion::kEffectsFast/Default/Slow` name `Spring`
+  settle-speed (`omega`) presets — "spatial" for position/size motion, "effects" for fades/colour
+  (faster) — reusing `Spring`'s existing critically-damped model (FR-4d) rather than adding a new
+  motion primitive.
+
 ## 4. Non-functional Requirements
 
 ### NFR-1 Platform independence

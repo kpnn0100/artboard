@@ -30,6 +30,56 @@ namespace artboard
             t -= 2.625 / d1;
             return n1 * t * t + 0.984375;
         }
+
+        // Solve the cubic bezier's parametric x(u) = t for u in [0,1], given P0=(0,0),
+        // P1=(x1,_), P2=(x2,_), P3=(1,1). Newton-Raphson first (fast, matches the approach
+        // browsers use for CSS cubic-bezier() timing functions); falls back to bisection when
+        // the derivative is too small to trust (flat/near-vertical stretches of the curve).
+        double cubicBezierSolveX(double x1, double x2, double t)
+        {
+            auto bezierX = [x1, x2](double u) {
+                const double v = 1.0 - u;
+                return 3.0 * v * v * u * x1 + 3.0 * v * u * u * x2 + u * u * u;
+            };
+            auto bezierDX = [x1, x2](double u) {
+                const double v = 1.0 - u;
+                return 3.0 * v * v * x1 + 6.0 * v * u * (x2 - x1) + 3.0 * u * u * (1.0 - x2);
+            };
+            double u = t; // identity is a reasonable initial guess for typical control points
+            for (int i = 0; i < 8; ++i)
+            {
+                const double err = bezierX(u) - t;
+                if (std::fabs(err) < 1e-7)
+                    return u;
+                const double d = bezierDX(u);
+                if (std::fabs(d) < 1e-6)
+                    break;
+                u -= err / d;
+                if (u < 0.0) u = 0.0;
+                if (u > 1.0) u = 1.0;
+            }
+            double lo = 0.0, hi = 1.0;
+            u = t;
+            for (int i = 0; i < 30; ++i)
+            {
+                const double x = bezierX(u);
+                if (std::fabs(x - t) < 1e-7)
+                    break;
+                if (x < t) lo = u; else hi = u;
+                u = (lo + hi) / 2.0;
+            }
+            return u;
+        }
+
+        // y(u) at the u solving x(u) = t -- the cubic-bezier curve's eased output for input t.
+        double cubicBezierY(double x1, double y1, double x2, double y2, double t)
+        {
+            if (t <= 0.0) return 0.0;
+            if (t >= 1.0) return 1.0;
+            const double u = cubicBezierSolveX(x1, x2, t);
+            const double v = 1.0 - u;
+            return 3.0 * v * v * u * y1 + 3.0 * v * u * u * y2 + u * u * u;
+        }
     }
 
     double applyEasing(Easing e, double t)
@@ -113,6 +163,17 @@ namespace artboard
         case Easing::EaseInOutBounce:
             return t < 0.5 ? (1.0 - outBounce(1.0 - 2.0 * t)) / 2.0
                            : (1.0 + outBounce(2.0 * t - 1.0)) / 2.0;
+
+        case Easing::Standard:
+            return cubicBezierY(0.2, 0.0, 0.0, 1.0, t);
+        case Easing::StandardDecel:
+            return cubicBezierY(0.0, 0.0, 0.0, 1.0, t);
+        case Easing::StandardAccel:
+            return cubicBezierY(0.3, 0.0, 1.0, 1.0, t);
+        case Easing::EmphasizedDecel:
+            return cubicBezierY(0.05, 0.7, 0.1, 1.0, t);
+        case Easing::EmphasizedAccel:
+            return cubicBezierY(0.3, 0.0, 0.8, 0.15, t);
         }
         return t; // defensive: only reached if `e` is an out-of-range cast
     }

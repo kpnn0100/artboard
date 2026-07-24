@@ -114,6 +114,17 @@ state under `reducedMotion()`.
   (`advance(dtSeconds, omega)` via a closed-form step). It is the single source of truth for the
   "value glides to a target" motion that `Knob` and `Slider` (and app displays) previously each
   hand-integrated with per-frame Euler.
+- Five additional `Easing` entries (`Standard`, `StandardDecel`, `StandardAccel`,
+  `EmphasizedDecel`, `EmphasizedAccel`) are named cubic-bezier curves, evaluated by a generic
+  bezier-solve helper (Newton-Raphson + bisection fallback) rather than a closed-form formula,
+  so an arbitrary control-point shape is expressible through the same `Easing`/`applyEasing`
+  seam as every other curve — no second "curve lookup" mechanism.
+- `anim/MotionTokens.h` names a shared duration scale (`kDurationShort1..4/Medium1..4/Long1..4`)
+  and `Spring` settle-speed presets (`kSpatialFast/Default/Slow`, `kEffectsFast/Default/Slow`),
+  so applications reuse one motion vocabulary instead of hand-picking constants per control. It
+  is pure data (header-only, like `Observable`), with no new primitive underneath — durations are
+  plain milliseconds and the spring presets are just named `omega` values for the existing
+  `Spring` (FR-4d).
 - `reducedMotion()` / `setReducedMotion(bool)` are a global accessibility switch consulted by
   `Spring` and `AnimatedProperty`; when on, all motion collapses to instant. This keeps the
   reduce-motion decision in one place instead of per-control conditionals.

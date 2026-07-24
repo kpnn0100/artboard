@@ -10,6 +10,7 @@
 #include "../../src/anim/Animation.h"
 #include "../../src/anim/Animator.h"
 #include "../../src/anim/Motion.h"
+#include "../../src/anim/MotionTokens.h"
 #include "../../src/anim/Spring.h"
 #include "../../src/render/RenderTarget.h"
 #include "../../src/render/RecordingTarget.h"

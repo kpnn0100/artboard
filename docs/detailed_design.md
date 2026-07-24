@@ -73,6 +73,27 @@ Families: linear; quad/cubic/quart (in/out/in-out); sine, expo (in/out/in-out); 
 (in/out/in-out, may overshoot mid-curve but pinned to `0` at `t=0` and `1` at `t=1`); bounce
 (in/out/in-out). No backend code; trivially unit-testable.
 
+## 2a-i. Cubic-bezier `Easing` curves + `anim::MotionTokens`
+
+Five `Easing` entries (`Standard`, `StandardDecel`, `StandardAccel`, `EmphasizedDecel`,
+`EmphasizedAccel`, FR-31) are named cubic-bezier control-point curves (matching CSS
+`cubic-bezier(x1,y1,x2,y2)` timing functions) rather than a closed-form polynomial. `Easing.cpp`
+gains two anonymous-namespace helpers: `cubicBezierSolveX(x1, x2, t)` solves the bezier's
+parametric `x(u) = t` for `u` via Newton-Raphson (8 iterations) with a bisection fallback (30
+iterations) for robustness when the derivative is near zero, and `cubicBezierY(x1, y1, x2, y2,
+t)` calls it and evaluates `y(u)` at the resulting `u`. Each of the five `applyEasing` cases
+calls `cubicBezierY` with its named control points. Because the underlying bezier is anchored at
+`(0,0)` and `(1,1)`, every curve still pins `0` at `t=0` and `1` at `t=1` (FR-4a) with no special
+casing. This keeps curve lookup to the single existing `Easing`/`applyEasing` seam — no second
+mechanism for "curves with arbitrary control points" alongside the closed-form ones.
+
+`anim/MotionTokens.h` (header-only, like `Observable`) is pure named data with no new primitive:
+a millisecond duration scale (`kDurationShort1..4`, `kDurationMedium1..4`, `kDurationLong1..4`)
+and `Spring` settle-speed presets (`kSpatialFast/Default/Slow`, `kEffectsFast/Default/Slow` —
+"spatial" for position/size motion, "effects" for fades/colour, faster) that are just named
+`omega` values consumed by the existing `Spring::advance(dtSeconds, omega)` (FR-4d). It carries
+no dependency the rest of `anim` doesn't already have.
+
 ## 2b. `anim::Tween`
 
 A pure value type describing a whole scalar animation.
@@ -706,6 +727,8 @@ inline helper in `base/InputController.h`.
   Canvas2D / Cairo adapters.
 - FR-27 maps to `IRenderTarget::{pushLayer,popLayer}`, `RecordingTarget` (`DrawOp::Kind::
   {PushLayer,PopLayer}`), and the Canvas2D / Cairo adapters.
+- FR-31 maps to the five cubic-bezier `Easing` entries + `cubicBezierSolveX`/`cubicBezierY` in
+  `Easing.cpp`, and the named constants in `anim/MotionTokens.h`.
 - FR-13 maps to `IRenderTarget::setRadialFill`, `RecordingTarget` (+ `DrawOp::color2`), and the
   Canvas2D / Cairo adapters.
 - FR-17 maps to `IRenderTarget::setLinearFill`, `RecordingTarget` (`DrawOp::Kind::SetLinearFill`,
