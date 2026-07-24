@@ -149,7 +149,10 @@ package ui {
   class ProgressBar
   class ComboBox
   class TabView
-  class ScrollView
+  class ScrollView {
+    + applyRubberBand(raw)  ' FR-29: compress excess past [0,maxOffset] instead of hard clamp
+    + advance(nowMs)  ' fling decay -> Spring snap-back when out of range
+  }
   class LineGraph
   class ImageView
 

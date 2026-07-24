@@ -80,6 +80,18 @@ existing input HAL — no new primitive:
   reads identically across controls and works for any theme without new theme fields. This is the
   "consistency lock" for interaction feedback.
 
+### 2.6a Kinetic scrolling (FR-29)
+
+`ScrollView` distinguishes three offset regimes: **direct drag** (1:1 with the pointer, with
+rubber-band resistance once past `[0, maxOffset()]` — a compressed fraction of the excess, not a
+hard clamp), **ballistic fling** (a `Fling` gesture, FR-28, seeds a velocity that decays each
+frame by an exponential friction factor until it drops below a stop threshold), and **snap-back**
+(once out of range and not being dragged — whether from a released overscroll or a fling that
+carried it past the edge — a `Spring`, FR-4d, eases the offset to the nearest boundary, honoring
+reduced motion for free since `Spring::advance` already does). Only the first regime is exempt
+from FR-25 (the pointer is the animation); the recovery is genuinely spring-driven, reusing the
+framework's existing glide-to-target primitive rather than a new hand-rolled integrator.
+
 ### 2.7 Animated state transitions (FR-25)
 
 Controls never change a visible property in a single frame. Each interactive control drives its

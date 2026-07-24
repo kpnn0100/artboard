@@ -1,8 +1,17 @@
 #include "ScrollView.h"
 #include "../base/Interaction.h"
+#include "../../anim/MotionTokens.h"
+#include <cmath>
 
 namespace artboard
 {
+    namespace
+    {
+        constexpr double kOverscrollFactor = 0.35;   // fraction of raw excess shown once past an edge
+        constexpr double kFlingFriction = 0.05;      // velocity multiplier per second (exponential decay)
+        constexpr double kFlingStopVelocity = 20.0;  // px/s; below this, kinetic motion just stops
+    }
+
     ScrollView::ScrollView(const ScrollStyle &style) : mStyle(style)
     {
         clipToBounds = true;
@@ -24,13 +33,12 @@ namespace artboard
         return m > 0.0 ? m : 0.0;
     }
 
-    void ScrollView::clampOffset()
+    double ScrollView::applyRubberBand(double raw) const
     {
-        if (mOffset < 0.0)
-            mOffset = 0.0;
-        const double mx = maxOffset();
-        if (mOffset > mx)
-            mOffset = mx;
+        const double lo = 0.0, hi = maxOffset();
+        if (raw < lo) return lo + (raw - lo) * kOverscrollFactor;
+        if (raw > hi) return hi + (raw - hi) * kOverscrollFactor;
+        return raw;
     }
 
     void ScrollView::syncContent() const
@@ -50,21 +58,37 @@ namespace artboard
             mDragStartOffset = mOffset;
             mDragStartY = g.pos.y;
             mThumbDrag = localPoint.x > width.value() - 14.0;
+            mDragging = true;
+            mFlingVelocity = 0.0;    // a fresh grab cancels any residual kinetic motion
+            mSnapBackActive = false; // and any in-progress snap-back
             return true;
         }
         if (g.type == T::Drag)
         {
             const double dy = g.pos.y - mDragStartY;
+            double raw;
             if (mThumbDrag)
             {
                 const double scale = mContentHeight > 0.0 ? mContentHeight / height.value() : 1.0;
-                mOffset = mDragStartOffset + dy * scale;
+                raw = mDragStartOffset + dy * scale;
             }
             else
             {
-                mOffset = mDragStartOffset - dy;
+                raw = mDragStartOffset - dy;
             }
-            clampOffset();
+            mOffset = applyRubberBand(raw);
+            return true;
+        }
+        if (g.type == T::Drop)
+        {
+            mDragging = false;
+            return true;
+        }
+        if (g.type == T::Fling)
+        {
+            // Offset moves opposite the finger's Y (matching the Drag math above:
+            // offset = start - dy), so the fling velocity is negated the same way.
+            mFlingVelocity = -g.velocity.y;
             return true;
         }
         return Segment::handleGesture(g, localPoint);
@@ -78,8 +102,43 @@ namespace artboard
 
     void ScrollView::advance(double nowMs)
     {
-        const double dt = mLastMs < 0.0 ? 0.0 : (nowMs - mLastMs) / 1000.0;
+        double dt = mLastMs < 0.0 ? 0.0 : (nowMs - mLastMs) / 1000.0;
         mLastMs = nowMs;
+        if (dt > 0.05) dt = 0.05; // bound a long stall, matching Spring's own clamp
+
+        if (!mDragging)
+        {
+            const double lo = 0.0, hi = maxOffset();
+            if (mOffset < lo || mOffset > hi)
+            {
+                // Out of range (a released overscroll, or a fling that carried it past the edge):
+                // kinetic motion stops and a Spring eases the offset back to the nearest boundary
+                // (FR-29) -- the framework's existing glide-to-target primitive, not a new
+                // hand-rolled per-frame integrator. Honors reduced motion for free (Spring::advance).
+                const double target = mOffset < lo ? lo : hi;
+                if (!mSnapBackActive)
+                {
+                    mSnapBack.reset(mOffset);
+                    mSnapBack.setTarget(target);
+                    mSnapBackActive = true;
+                    mFlingVelocity = 0.0;
+                }
+                mOffset = mSnapBack.advance(dt, motion::kSpatialFast);
+                if (!mSnapBack.isMoving())
+                {
+                    mOffset = target;
+                    mSnapBackActive = false;
+                }
+            }
+            else if (mFlingVelocity != 0.0)
+            {
+                mOffset += mFlingVelocity * dt;
+                mFlingVelocity *= std::pow(kFlingFriction, dt);
+                if (std::fabs(mFlingVelocity) < kFlingStopVelocity)
+                    mFlingVelocity = 0.0;
+            }
+        }
+
         // Emphasise the scrollbar while the pointer is anywhere over the viewport (the
         // content child owns hover, so use hover-within, not this control's own hover).
         mScrollbar.setTarget(isHoverWithin() ? 1.0 : 0.0);

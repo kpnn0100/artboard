@@ -521,6 +521,20 @@ channel.
   ambient "pointer resting over a control" concept, so a touch drag must not leave a control
   looking permanently hovered afterward.
 
+### FR-29 Kinetic scrolling
+
+`ScrollView` shall continue scrolling after a `Fling` gesture (FR-28) with framerate-independent
+exponential velocity decay (each frame, `velocity *= frictionPerSecond^dt`; stops once below a
+small threshold), and shall allow the offset to move **past** `[0, maxOffset()]` during an active
+drag with **rubber-band resistance** (the displayed excess is a fraction of the raw pulled
+distance) rather than hard-clamping — both a direct drag and a fling may overshoot the range.
+Once released (or once ballistic motion first carries it out of range), the offset **eases back**
+to the nearest boundary via the existing `Spring` (FR-4d, not a hand-rolled per-frame integrator),
+honoring reduced motion (an instant snap, per FR-4e — `Spring::advance` already does this).
+Direct-manipulation drag/rubber-band positioning remains exempt from FR-25 (the pointer itself is
+the animation, per its existing exemption clause); only the post-release recovery is
+spring-driven.
+
 ## 4. Non-functional Requirements
 
 ### NFR-1 Platform independence

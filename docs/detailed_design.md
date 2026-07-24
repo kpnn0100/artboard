@@ -262,10 +262,14 @@ alongside the existing `mAlt`/`mShift`/`mCtrl`) and `emit()` carries it onto eve
 `Segment::dispatchGesture`'s `Move` case still routes a touch-flagged bare `Move` to the deepest
 hit-tested handler (unchanged hit-testing), but skips the `setHovered(this)` call when
 `g.touch == true` — a touchscreen has no ambient "resting over" state, so a touch drag must not
-leave a control looking permanently hovered once the finger lifts. `LongPress` routes like
-`DragStart`/`Drag` (to the captured child, without releasing capture — the press is still held);
-`Fling` routes like `Click`/`DoubleClick`/`RightClick` (a fresh hit-test), since by the time it is
-dispatched the preceding `Drop` has already released capture.
+leave a control looking permanently hovered once the finger lifts. `LongPress` and `Fling` both
+route with `DragStart`/`Drag`/`Up`/`Drop` (to the currently captured child if any, else falling
+through to this segment's own `handleGesture` — the same path `Drag` already takes when there is
+no capture, e.g. a `ScrollView` driving its own drag/fling directly). `Fling` is a continuation of
+the drag that just ended, not a fresh interaction, so it must reach the same target `Drop` did —
+routing it like `Click` (a fresh hit-test) would let an unrelated child under the release point
+absorb it instead of the segment that was actually being dragged (e.g. a `ScrollView`'s own
+content child, rather than the `ScrollView`).
 
 ## 4. Visual Segment Primitives
 
@@ -768,7 +772,25 @@ inline helper in `base/InputController.h`.
 
 - `setContent(segment)`, `contentHeight`. `clipToBounds = true`; the content child is translated by
   `-offset`. `Drag` on the body and `Drag` on the scrollbar thumb both change `offset` (1:1 direct
-  manipulation, exempt from FR-25), clamped to `[0, max(0, contentHeight - height)]`.
+  manipulation, exempt from FR-25) via `applyRubberBand(raw)`, which compresses (rather than hard-
+  clamps) any excess past `[0, maxOffset()]` by `kOverscrollFactor` (0.35).
+- **Kinetic scrolling (FR-29).** `DragStart` cancels any live fling/snap-back (`mFlingVelocity =
+  0`, `mSnapBackActive = false`) and marks `mDragging = true`; `Drop` clears it. A `Fling` gesture
+  sets `mFlingVelocity = -g.velocity.y` (offset moves opposite the finger's Y, matching the drag
+  math `offset = start - dy`). `advance(nowMs)`, while not dragging:
+  - if `mOffset` is outside `[0, maxOffset()]`: on first entry, resets `Spring mSnapBack` to the
+    current offset and targets the nearest boundary, zeroing `mFlingVelocity` (kinetic motion
+    stops; the spring takes over); every subsequent frame advances the spring and adopts its
+    value, snapping to the exact target and clearing `mSnapBackActive` once the spring stops
+    moving (`Spring::isMoving()`);
+  - else if `mFlingVelocity != 0`: integrates `mOffset += mFlingVelocity * dt`, decays
+    `mFlingVelocity *= kFlingFriction ^ dt` (framerate-independent exponential, `dt` clamped to
+    0.05s like `Spring`), and zeroes it below `kFlingStopVelocity` (20px/s) to avoid an infinite
+    crawl. A fling that carries the offset out of range this frame is caught by the snap-back
+    branch on the next frame (a one-frame lag, imperceptible).
+  - This is a genuine **spring** recovery (FR-4d), not a new hand-rolled per-frame integrator, and
+    inherits reduced-motion handling for free (`Spring::advance` already snaps under
+    `reducedMotion()`, FR-4e).
 - **Hover (FR-24):** `advance` eases a `Spring mScrollbar` toward `1` while `isHoverWithin()` (the
   content child owns hover, so hover-within is used, not this control's own hover); `onPaint` widens
   the scrollbar (`8 → 10px`) and brightens the thumb by that factor.
@@ -818,6 +840,8 @@ inline helper in `base/InputController.h`.
 - FR-28 maps to `RawPointer::touch`/`Gesture::touch`/`Gesture::velocity`, the new
   `Gesture::Type::{LongPress,Fling}` values, `GestureRecognizer::advance` + its long-press/fling
   state, and the touch check in `Segment::dispatchGesture`'s `Move` case.
+- FR-29 maps to `ScrollView::applyRubberBand`, `mFlingVelocity`, `mSnapBack` (a `Spring`), and the
+  regime handling in `ScrollView::advance`.
 - FR-13 maps to `IRenderTarget::setRadialFill`, `RecordingTarget` (+ `DrawOp::color2`), and the
   Canvas2D / Cairo adapters.
 - FR-17 maps to `IRenderTarget::setLinearFill`, `RecordingTarget` (`DrawOp::Kind::SetLinearFill`,

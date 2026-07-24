@@ -1175,34 +1175,43 @@ TEST(Segment_touch_move_does_not_set_hover)
     CHECK(root->isHovered()); // mouse hover is unaffected
     Segment::setHovered(nullptr);
 }
-TEST(Segment_longPress_routes_to_captured_child_fling_routes_fresh)
+TEST(Segment_longPress_and_fling_route_to_captured_child_not_a_fresh_hit_test)
 {
-    auto root = std::make_shared<Segment>(); root->width.set(100); root->height.set(100);
-    auto a = std::make_shared<Segment>(); a->width.set(100); a->height.set(100);
-    root->addChild(a);
-
-    int aLongPress = 0;
+    // Fling is a continuation of the drag that just ended, not a fresh interaction -- it must
+    // reach the SAME captured child Drag/Drop did, not whatever unrelated child a fresh
+    // topmostChildAt() hit-test would find at the release point (e.g. a ScrollView's own
+    // content child, which would silently swallow the fling otherwise).
+    int longPressCount = 0, flingCount = 0;
     struct Probe : Segment
     {
-        int *counter;
+        int *longPress; int *fling;
         bool handleGesture(const Gesture &g, const Point &) override
         {
-            if (g.type == GT::LongPress) ++*counter;
+            if (g.type == GT::LongPress) ++*longPress;
+            if (g.type == GT::Fling) ++*fling;
             return true;
         }
     };
     auto probe = std::make_shared<Probe>();
-    probe->counter = &aLongPress;
+    probe->longPress = &longPressCount; probe->fling = &flingCount;
     probe->width.set(100); probe->height.set(100);
     auto probeRoot = std::make_shared<Segment>(); probeRoot->width.set(100); probeRoot->height.set(100);
     probeRoot->addChild(probe);
 
-    probeRoot->onGesture({GT::Down, {10, 10}, {10, 10}, PB::Left});      // captures probe
-    probeRoot->onGesture({GT::LongPress, {10, 10}, {10, 10}, PB::Left}); // routed to captured child
-    CHECK(aLongPress == 1);
-    probeRoot->onGesture({GT::Up, {10, 10}, {10, 10}, PB::Left});        // releases capture
-    probeRoot->onGesture({GT::Fling, {10, 10}, {10, 10}, PB::Left});     // fresh hit-test (no capture left)
-    CHECK(aLongPress == 1); // Fling isn't a LongPress, but must not crash / must hit-test cleanly
+    probeRoot->onGesture({GT::Down, {10, 10}, {10, 10}, PB::Left});       // captures probe
+    probeRoot->onGesture({GT::LongPress, {10, 10}, {10, 10}, PB::Left});  // routed to captured child
+    CHECK(longPressCount == 1);
+    probeRoot->onGesture({GT::DragStart, {10, 10}, {10, 10}, PB::Left});  // still captured
+    probeRoot->onGesture({GT::Fling, {10, 10}, {10, 10}, PB::Left});      // reaches the SAME captured child
+    CHECK(flingCount == 1);
+    probeRoot->onGesture({GT::Up, {10, 10}, {10, 10}, PB::Left});         // releases capture
+
+    // Once truly released, a stray Fling delivered directly to probeRoot (no captured child, and
+    // no Down re-establishing one) falls through to probeRoot's OWN handler -- matching how Drag
+    // already behaves with no capture (e.g. a ScrollView driven by direct onGesture calls) --
+    // rather than hit-testing fresh into probe underneath it.
+    probeRoot->onGesture({GT::Fling, {10, 10}, {10, 10}, PB::Left});
+    CHECK(flingCount == 1); // unchanged: did not reach probe again
 }
 
 // ───────────────────────── input: InputRouter ─────────────────────────
@@ -1771,22 +1780,61 @@ TEST(ScrollView_clip_drag_and_thumb)
     RecordingTarget rec; sv->render(rec);
     CHECK(rec.count(K::ClipRect) >= 1); // clipToBounds + scrollable
 
-    // content drag: drag up 40px -> offset 40
+    // content drag: drag up 40px -> offset 40 (in range, no rubber-banding involved)
     sv->onGesture({Gesture::Type::DragStart, {50, 50}, {50, 50}, PointerButton::Left});
     sv->onGesture({Gesture::Type::Drag, {50, 10}, {50, 50}, PointerButton::Left});
     CHECK_NEAR(sv->offset(), 40.0, 1e-9);
-    // drag far the other way clamps to 0
+    sv->onGesture({Gesture::Type::Drop, {50, 10}, {50, 50}, PointerButton::Left});
+
+    // A single monotonic clock drives every advance() call below, so each settle phase's
+    // convergence time is independent of the others (no hand-picked absolute timestamps).
+    double clock = 0.0;
+    auto settle = [&](int steps) {
+        for (int i = 0; i < steps; ++i) { clock += 20.0; sv->advance(clock); }
+    };
+
+    // drag far past the start: FR-29 rubber-bands (compresses the excess) rather than hard
+    // clamping -- raw = 40 - 350 = -310, compressed to 0 + (-310)*0.35 = -108.5.
     sv->onGesture({Gesture::Type::DragStart, {50, 50}, {50, 50}, PointerButton::Left});
     sv->onGesture({Gesture::Type::Drag, {50, 400}, {50, 50}, PointerButton::Left});
-    CHECK_NEAR(sv->offset(), 0.0, 1e-9);
-    // thumb drag (x in scrollbar zone): scale = 400/200 = 2
+    CHECK_NEAR(sv->offset(), -108.5, 1e-9);
+    // releasing lets the Spring ease it back to the boundary (0), not an instant snap
+    sv->onGesture({Gesture::Type::Drop, {50, 400}, {50, 50}, PointerButton::Left});
+    settle(1);
+    CHECK(sv->offset() < 0.0); // still recovering just after release
+    settle(60); // generous: the Spring's own eps (1e-3) triggers the exact snap well before this
+    CHECK_NEAR(sv->offset(), 0.0, 1e-9); // settled exactly at the boundary
+
+    // thumb drag (x in scrollbar zone) from the now-settled offset=0: scale = 400/200 = 2
     sv->onGesture({Gesture::Type::DragStart, {195, 10}, {195, 10}, PointerButton::Left});
     sv->onGesture({Gesture::Type::Drag, {195, 60}, {195, 10}, PointerButton::Left});
     CHECK_NEAR(sv->offset(), 100.0, 1e-9);
-    // content drag past the end clamps to maxOffset (clamp-high branch)
+    sv->onGesture({Gesture::Type::Drop, {195, 60}, {195, 10}, PointerButton::Left});
+
+    // content drag past the end rubber-bands (compresses) rather than hard clamping, then
+    // settles to maxOffset (200) via the same Spring recovery once released.
     sv->onGesture({Gesture::Type::DragStart, {50, 50}, {50, 50}, PointerButton::Left});
     sv->onGesture({Gesture::Type::Drag, {50, -400}, {50, 50}, PointerButton::Left});
+    CHECK(sv->offset() > 200.0); // past the end, not hard-clamped
+    sv->onGesture({Gesture::Type::Drop, {50, -400}, {50, 50}, PointerButton::Left});
+    settle(60);
     CHECK_NEAR(sv->offset(), 200.0, 1e-9);
+
+    // A fling past the end also rubber-bands and settles back the same way (FR-29). Currently
+    // at offset=200 (the ceiling); drag DOWN first (dy=+40 -> raw=200-40=160, back in range)
+    // before flinging up, so the fling starts from a normal in-range position.
+    sv->onGesture({Gesture::Type::DragStart, {50, 50}, {50, 50}, PointerButton::Left});
+    sv->onGesture({Gesture::Type::Drag, {50, 90}, {50, 50}, PointerButton::Left});
+    CHECK_NEAR(sv->offset(), 160.0, 1e-9);
+    sv->onGesture({Gesture::Type::Drop, {50, 90}, {50, 50}, PointerButton::Left});
+    Gesture fling{Gesture::Type::Fling, {50, 90}, {50, 50}, PointerButton::Left};
+    fling.velocity = Point{0.0, -5000.0}; // fast upward finger flick -> offset increases fast
+    sv->onGesture(fling);
+    settle(1);
+    CHECK(sv->offset() > 200.0); // ballistic motion overshoots the end
+    settle(60);
+    CHECK_NEAR(sv->offset(), 200.0, 1e-9); // recovers to the boundary once out of range
+
     // A bare Move over the scrollbar gutter (x>content width, so it misses the content child)
     // reaches ScrollView's own handler and falls through to the base (non-drag fallback).
     sv->onGesture({Gesture::Type::Move, {195, 50}, {195, 50}, PointerButton::Left});
@@ -1798,6 +1846,34 @@ TEST(ScrollView_clip_drag_and_thumb)
     sv2->setContentHeight(100);
     CHECK_NEAR(sv2->maxOffset(), 0.0, 1e-9);
     RecordingTarget rec2; sv2->render(rec2);
+}
+TEST(ScrollView_fling_decays_to_stop_while_staying_in_range)
+{
+    // A modest fling (unlike the boundary-overshoot cases above) should decay naturally below
+    // the stop threshold while never leaving [0, maxOffset()] -- exercising the "velocity decays
+    // below kFlingStopVelocity while still in range" branch, distinct from the snap-back path.
+    auto sv = std::make_shared<ScrollView>();
+    sv->width.set(200); sv->height.set(200);
+    auto content = std::make_shared<RectangleSegment>();
+    content->width.set(180); content->height.set(400);
+    sv->setContent(content);
+    sv->setContentHeight(400); // maxOffset = 200
+
+    sv->onGesture({Gesture::Type::DragStart, {50, 50}, {50, 50}, PointerButton::Left});
+    sv->onGesture({Gesture::Type::Drag, {50, -50}, {50, 50}, PointerButton::Left}); // offset -> 100
+    CHECK_NEAR(sv->offset(), 100.0, 1e-9);
+    sv->onGesture({Gesture::Type::Drop, {50, -50}, {50, 50}, PointerButton::Left});
+
+    double clock = 0.0;
+    sv->advance(clock); // seed mLastMs
+    Gesture fling{Gesture::Type::Fling, {50, -50}, {50, 50}, PointerButton::Left};
+    fling.velocity = Point{0.0, -100.0}; // modest: mFlingVelocity = +100px/s, well under 400
+    sv->onGesture(fling);
+    for (int i = 0; i < 40; ++i) { clock += 20.0; sv->advance(clock); }
+    const double settledOffset = sv->offset();
+    CHECK(settledOffset > 100.0 && settledOffset < 200.0); // moved, but never left the range
+    clock += 100.0; sv->advance(clock);
+    CHECK_NEAR(sv->offset(), settledOffset, 1e-9); // velocity reached exactly 0 -> no further motion
 }
 TEST(LineGraph_series_and_modes)
 {

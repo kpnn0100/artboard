@@ -331,6 +331,7 @@ namespace artboard
         case Gesture::Type::Up:
         case Gesture::Type::Drop:
         case Gesture::Type::LongPress: // still mid-press: route like Drag, keep the capture
+        case Gesture::Type::Fling:     // a continuation of the drag that just ended: same target
             if (mCapturedChild)
             {
                 const bool handled = mCapturedChild->dispatchGesture(g);
@@ -342,7 +343,6 @@ namespace artboard
         case Gesture::Type::Click:
         case Gesture::Type::DoubleClick:
         case Gesture::Type::RightClick:
-        case Gesture::Type::Fling: // capture already released by the preceding Drop: fresh hit-test
             if (Segment *child = topmostChildAt(g.pos))
                 return child->dispatchGesture(g);
             break;
