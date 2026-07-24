@@ -73,6 +73,11 @@ package input {
 package scene {
   abstract class Drawable
   class Artboard
+  class "Shapes" as Shapes <<(F,#88c) free fns>> {
+    + drawRoundedRect() / drawCircle()
+    + drawShadow() / drawElevation()  ' FR-30, gradient-composed soft shadow
+  }
+  Shapes ..> IRenderTarget
   class Rectangle
   class Line
   class Polyline

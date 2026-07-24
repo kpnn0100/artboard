@@ -36,6 +36,24 @@ namespace artboard
      *  Shared by the rotary/round UI widgets. */
     void drawCircle(IRenderTarget &t, double cx, double cy, double r, const Paint &paint);
 
+    /** Paint a soft drop shadow for a rounded rect (FR-30), composed ONLY from the existing
+     *  linear/radial gradient fill primitives -- no blur HAL primitive exists. Four straight-
+     *  edge strips (linear gradient: full `color` alpha at the shadowed rect's edge, fading to
+     *  zero at `blurPx` beyond it) plus four corner wedges (radial gradient centred at each
+     *  rounded corner's arc centre, fading to zero at `cornerRadius + blurPx`). Draws ONLY the
+     *  shadow -- the caller draws the object's own opaque fill on top afterward (e.g. via
+     *  drawRoundedRect), which covers the wedge's inner region where the two gradient shapes do
+     *  not perfectly agree (see requirements.md FR-30 / Constraints). `offsetX`/`offsetY` shift
+     *  the shadow relative to `rect` (a positive offsetY drops the shadow below, light from
+     *  above). No-op if `blurPx <= 0`. */
+    void drawShadow(IRenderTarget &t, const Rect &rect, double cornerRadius, const Color &color,
+                     double blurPx, double offsetX = 0.0, double offsetY = 0.0);
+
+    /** Two-layer Material-style elevation shadow scaled by `elevationDp`: a tighter, darker
+     *  "key" layer plus a softer, lighter "ambient" layer (both black), via drawShadow. Does not
+     *  claim exact parity with Material's published elevation tables. */
+    void drawElevation(IRenderTarget &t, const Rect &rect, double cornerRadius, double elevationDp);
+
     /** Rectangle / square, optional corner radius and border (via Paint). */
     class Rectangle : public Drawable
     {

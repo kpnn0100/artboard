@@ -599,6 +599,72 @@ TEST(Text_uses_fill_and_drawText)
     CHECK(drawn == "hi");
 }
 
+TEST(drawShadow_noop_when_blur_non_positive)
+{
+    RecordingTarget t;
+    drawShadow(t, Rect{0, 0, 100, 50}, 8, Color::rgba(0, 0, 0, 255), 0.0);
+    CHECK(t.ops().empty());
+    drawShadow(t, Rect{0, 0, 100, 50}, 8, Color::rgba(0, 0, 0, 255), -5.0);
+    CHECK(t.ops().empty());
+}
+TEST(drawShadow_four_strips_and_four_wedges)
+{
+    RecordingTarget t;
+    drawShadow(t, Rect{0, 0, 100, 50}, 8, Color::rgba(0, 0, 0, 255), 6.0);
+    // 4 edge strips + 4 corner wedges, each one fillPath (and matching gradient set call).
+    CHECK(t.count(K::FillPath) == 8);
+    CHECK(t.count(K::SetLinearFill) == 4);
+    CHECK(t.count(K::SetRadialFill) == 4);
+    CHECK(t.count(K::BeginPath) == 8);
+    CHECK(t.count(K::ClosePath) == 8);
+
+    // Top strip: linear gradient peak at y=rect.y (0), zero at y=rect.y-blur (-6).
+    bool foundTop = false;
+    for (size_t i = 0; i + 1 < t.ops().size(); ++i)
+    {
+        if (t.ops()[i].kind == K::SetLinearFill &&
+            std::fabs(t.ops()[i].args[1] - 0.0) < 1e-9 && std::fabs(t.ops()[i].args[3] - (-6.0)) < 1e-9)
+        {
+            foundTop = true;
+            CHECK(t.ops()[i].color.a > 0.99);   // peak: full alpha
+            CHECK(t.ops()[i].color2.a < 0.01);  // zero: transparent
+        }
+    }
+    CHECK(foundTop);
+
+    // A corner wedge's radial fill radius must be cornerRadius + blur = 14.
+    bool foundCornerRadius = false;
+    for (const auto &op : t.ops())
+        if (op.kind == K::SetRadialFill && std::fabs(op.args[2] - 14.0) < 1e-9)
+            foundCornerRadius = true;
+    CHECK(foundCornerRadius);
+}
+TEST(drawShadow_skips_degenerate_edge_strips)
+{
+    // Rect narrower than 2*cornerRadius -> the top/bottom strip guard is false (no positive
+    // span between the corners), only left/right can still be positive if the OTHER axis is
+    // large enough. Here BOTH axes are too small for either pair of strips.
+    RecordingTarget t;
+    drawShadow(t, Rect{0, 0, 10, 10}, 8, Color::rgba(0, 0, 0, 255), 4.0);
+    CHECK(t.count(K::SetLinearFill) == 0);   // both strip guards false
+    CHECK(t.count(K::SetRadialFill) == 4);   // corners still draw regardless
+}
+TEST(drawElevation_two_layers_scaled_by_elevation)
+{
+    RecordingTarget t;
+    drawElevation(t, Rect{0, 0, 100, 50}, 8, 4.0);
+    // ambient (blur=2*4=8 -> radius 8+8=16) + key (blur=1*4=4 -> radius 8+4=12), 4 corners each.
+    CHECK(t.count(K::SetRadialFill) == 8);
+    bool found16 = false, found12 = false;
+    for (const auto &op : t.ops())
+        if (op.kind == K::SetRadialFill)
+        {
+            if (std::fabs(op.args[2] - 16.0) < 1e-9) found16 = true;
+            if (std::fabs(op.args[2] - 12.0) < 1e-9) found12 = true;
+        }
+    CHECK(found16 && found12);
+}
+
 TEST(DrawText_font_family_and_letter_spacing_default_to_prior_behavior)
 {
     RecordingTarget t;

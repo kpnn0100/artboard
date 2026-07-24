@@ -598,6 +598,47 @@ plus general colour/paint interpolation. Keeping it in a single place is the int
   internal to the library; the Canvas2D stack's `prev = window.__abctx` captures whichever layer
   (or the real destination) was active, so a nested `pushLayer` layers correctly on top.
 
+## 11f. Elevation shadow (`drawShadow` / `drawElevation`)
+
+### Geometry
+
+Given a shadow rect `(sx,sy,sw,sh)` (the object's rect shifted by `offsetX/offsetY`), corner
+radius `r` (clamped to half the smaller side, exactly like `drawRoundedRect`), and blur `b`:
+
+- **Four edge strips** — plain rectangles between the two adjacent corners on each side (skipped
+  if their span would be non-positive, e.g. a very small rect), filled with `setLinearFill`
+  perpendicular to that edge: full `color` alpha at the shadow rect's own edge, fading to a
+  transparent copy of `color` at distance `b` beyond it.
+- **Four corner wedges** — a "kite" path per corner (`moveTo` the corner's arc centre `C`,
+  `lineTo` the point at radius `r+b` in the pure horizontal direction, `quadTo` (control point at
+  the outward-shifted sharp corner, mirroring how `drawRoundedRect` itself approximates a corner
+  with one quadratic bezier rather than a true arc) to the point at radius `r+b` in the pure
+  vertical direction, `lineTo` back to `C`, close), filled with `setRadialFill(C, r+b, color,
+  transparent)`.
+- Both `color`'s own alpha (as the peak) and a zero-alpha copy of the same RGB are used as the two
+  gradient stops, so the shadow fades to fully transparent rather than to an opaque background
+  color.
+
+### Known limitation
+
+The corner wedge's radial gradient measures distance from the arc **centre** `C` (the only
+gradient the HAL offers), not distance from the arc itself; at the shared seam with an edge strip
+(exactly at the object's straight edge, distance `r` from `C`), the wedge's colour is already
+partially faded (`lerp` fraction `r/(r+b)`) rather than full peak, while the strip is at full peak
+at that same point. This is a real, minor continuity gap between the two gradient shapes —
+unavoidable without a HAL-level annulus/multi-stop gradient (out of scope; FR-30 composes only
+from the existing 2-stop primitives) — documented in `requirements.md` §5. It is hidden under the
+object's own opaque fill (drawn by the caller afterward) for the region actually inside the
+corner radius, and only mildly softens the visible fade right at the tangent point.
+
+### `drawElevation`
+
+A convenience wrapper: two `drawShadow` calls scaled by `elevationDp` — a tighter, more opaque
+"key" layer (`offsetY = elevationDp*0.5`, `blurPx = elevationDp*1.0`, alpha `0.30`) and a softer,
+lighter "ambient" layer (`offsetY = elevationDp*0.25`, `blurPx = elevationDp*2.0`, alpha `0.15`),
+both black, matching Material's two-shadow elevation convention without claiming exact parity
+with Material's published elevation tables.
+
 ## 12. Extended widgets (`ui/concrete/`)
 
 File layout: the `ui` module is one class per file, split into `ui/base/` (foundations +
@@ -729,6 +770,8 @@ inline helper in `base/InputController.h`.
   {PushLayer,PopLayer}`), and the Canvas2D / Cairo adapters.
 - FR-31 maps to the five cubic-bezier `Easing` entries + `cubicBezierSolveX`/`cubicBezierY` in
   `Easing.cpp`, and the named constants in `anim/MotionTokens.h`.
+- FR-30 maps to `drawShadow`/`drawElevation` in `scene/Shapes.h`/`.cpp`, composed from
+  `IRenderTarget::setLinearFill`/`setRadialFill`.
 - FR-13 maps to `IRenderTarget::setRadialFill`, `RecordingTarget` (+ `DrawOp::color2`), and the
   Canvas2D / Cairo adapters.
 - FR-17 maps to `IRenderTarget::setLinearFill`, `RecordingTarget` (`DrawOp::Kind::SetLinearFill`,

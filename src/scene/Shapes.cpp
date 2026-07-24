@@ -58,6 +58,93 @@ namespace artboard
         applyPaint(t, paint);
     }
 
+    void drawShadow(IRenderTarget &t, const Rect &rect, double cornerRadius, const Color &color,
+                     double blurPx, double offsetX, double offsetY)
+    {
+        if (blurPx <= 0.0)
+            return;
+
+        const double sx = rect.x + offsetX, sy = rect.y + offsetY, sw = rect.w, sh = rect.h;
+        double r = cornerRadius;
+        const double half = (sw < sh ? sw : sh) * 0.5;
+        if (r > half) r = half;
+        if (r < 0.0) r = 0.0;
+        const double b = blurPx;
+
+        const Color peak = color;
+        const Color zero{color.r, color.g, color.b, 0.0};
+
+        // Four straight-edge strips, skipped if their span would be non-positive (a very small
+        // rect where 2*r already meets or exceeds a side).
+        if (sx + sw - r > sx + r)
+        {
+            // top
+            t.setLinearFill(sx + r, sy, sx + r, sy - b, peak, zero);
+            t.beginPath();
+            t.moveTo(sx + r, sy);       t.lineTo(sx + sw - r, sy);
+            t.lineTo(sx + sw - r, sy - b); t.lineTo(sx + r, sy - b);
+            t.closePath();
+            t.fillPath();
+            // bottom
+            t.setLinearFill(sx + r, sy + sh, sx + r, sy + sh + b, peak, zero);
+            t.beginPath();
+            t.moveTo(sx + r, sy + sh);       t.lineTo(sx + sw - r, sy + sh);
+            t.lineTo(sx + sw - r, sy + sh + b); t.lineTo(sx + r, sy + sh + b);
+            t.closePath();
+            t.fillPath();
+        }
+        if (sy + sh - r > sy + r)
+        {
+            // left
+            t.setLinearFill(sx, sy + r, sx - b, sy + r, peak, zero);
+            t.beginPath();
+            t.moveTo(sx, sy + r);       t.lineTo(sx, sy + sh - r);
+            t.lineTo(sx - b, sy + sh - r); t.lineTo(sx - b, sy + r);
+            t.closePath();
+            t.fillPath();
+            // right
+            t.setLinearFill(sx + sw, sy + r, sx + sw + b, sy + r, peak, zero);
+            t.beginPath();
+            t.moveTo(sx + sw, sy + r);       t.lineTo(sx + sw, sy + sh - r);
+            t.lineTo(sx + sw + b, sy + sh - r); t.lineTo(sx + sw + b, sy + r);
+            t.closePath();
+            t.fillPath();
+        }
+
+        // Four corner wedges: a "kite" from the arc centre C out to radius r+b (approximated
+        // with one quadTo, mirroring drawRoundedRect's own corner curve), filled with a radial
+        // gradient centred at C. sxs/sys pick which of the object's four corners this is.
+        const double corners[4][2] = {{-1, -1}, {1, -1}, {1, 1}, {-1, 1}}; // (sxs, sys)
+        for (const auto &c : corners)
+        {
+            const double sxs = c[0], sys = c[1];
+            const double cx = sx + (sxs < 0 ? r : sw - r);
+            const double cy = sy + (sys < 0 ? r : sh - r);
+            const double ph_x = cx + sxs * (r + b), ph_y = cy;
+            const double pv_x = cx, pv_y = cy + sys * (r + b);
+            const double ctrl_x = cx + sxs * (r + b), ctrl_y = cy + sys * (r + b);
+
+            t.setRadialFill(cx, cy, r + b, peak, zero);
+            t.beginPath();
+            t.moveTo(cx, cy);
+            t.lineTo(ph_x, ph_y);
+            t.quadTo(ctrl_x, ctrl_y, pv_x, pv_y);
+            t.lineTo(cx, cy);
+            t.closePath();
+            t.fillPath();
+        }
+    }
+
+    void drawElevation(IRenderTarget &t, const Rect &rect, double cornerRadius, double elevationDp)
+    {
+        // Ambient layer first (softer/wider), then key layer on top (tighter/darker) --
+        // matches Material's convention of compositing key over ambient.
+        drawShadow(t, rect, cornerRadius, Color::rgba(0, 0, 0, (int)(0.15 * 255)),
+                   elevationDp * 2.0, 0.0, elevationDp * 0.25);
+        drawShadow(t, rect, cornerRadius, Color::rgba(0, 0, 0, (int)(0.30 * 255)),
+                   elevationDp * 1.0, 0.0, elevationDp * 0.5);
+    }
+
     void Rectangle::onDraw(IRenderTarget &t) const
     {
         drawRoundedRect(t, rect, cornerRadius, paint);

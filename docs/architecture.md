@@ -206,6 +206,14 @@ state under `reducedMotion()`.
 - `Drawable` is the retained drawing base.
 - `Rectangle`, `Line`, `Polyline`, `Ellipse`, `Path`, and `Text` implement primitive graphics.
 - `Artboard` is the scene root for ordered drawing.
+- `drawShadow`/`drawElevation` (`Shapes.h`, alongside `drawRoundedRect`/`drawCircle`) paint a soft
+  rounded-rect drop shadow composed **only** from the existing linear/radial gradient primitives
+  (FR-30) — no blur HAL primitive exists, so this is the platform-free approximation: four
+  straight-edge strips (linear gradient) plus four corner wedges (radial gradient, centred at
+  each rounded corner's arc centre). The corner wedges are not perfectly seam-continuous with the
+  edge strips (a true annulus gradient would fix this but isn't an existing primitive) — a known,
+  documented limitation (requirements.md §5), minor in practice and hidden under the object's own
+  opaque fill drawn on top.
 
 ### 3.6 `ui`
 

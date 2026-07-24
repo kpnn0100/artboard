@@ -480,6 +480,22 @@ constants per control:
   (faster) — reusing `Spring`'s existing critically-damped model (FR-4d) rather than adding a new
   motion primitive.
 
+### FR-30 Elevation shadow helper
+
+The framework shall provide a `drawShadow(target, rect, cornerRadius, color, blurPx, offsetX,
+offsetY)` core helper that paints a soft drop shadow for a rounded rect, composed **only** from
+the existing linear- and radial-gradient fill primitives (FR-13, FR-17) — four straight-edge
+strips (a linear gradient, full `color` alpha at the shadowed rect's edge fading to zero at
+`blurPx` beyond it) and four corner wedges (a radial gradient centered at each rounded corner's
+arc centre, from `color` at the centre fading to zero at `cornerRadius + blurPx`). It draws only
+the shadow layer — the caller draws the object's own opaque fill on top afterward (e.g. via
+`drawRoundedRect`), which covers the wedge's inner region where the two gradients do not
+perfectly agree (see Constraints, §5). A convenience `drawElevation(target, rect, cornerRadius,
+elevationDp)` paints a two-layer Material-style shadow (a tighter, darker "key" layer plus a
+softer, lighter "ambient" layer) scaled by `elevationDp`, both via `drawShadow`. This is
+platform-free (no HAL change): it is expressible entirely from primitives every adapter already
+implements, so it renders identically everywhere per NFR-1.
+
 ## 4. Non-functional Requirements
 
 ### NFR-1 Platform independence
@@ -510,6 +526,12 @@ New controls, styles, and adapters shall be addable without rewriting existing c
   metrics.
 - Keyboard events are abstract and backend-neutral; adapters must map native key events into
   `KeyEvent`.
+- `drawShadow`'s corner wedges use a point-centred radial gradient (the only gradient the HAL
+  offers), so the exact alpha at the rounded corner's arc is not perfectly continuous with the
+  adjacent straight-edge strip's linear gradient at their shared seam (a true "annulus" gradient,
+  which would fix this, is not an existing primitive). The visible effect is minor for typical
+  blur/corner-radius ratios and is hidden under the object's own opaque fill; a true blur/annulus
+  primitive would remove it but is out of scope here (composing from existing primitives only).
 
 ## 6. Verification Outline
 
