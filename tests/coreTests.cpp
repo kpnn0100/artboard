@@ -7,6 +7,11 @@
 
 using namespace artboard;
 
+// <cmath> doesn't guarantee M_PI (MSVC only defines it when _USE_MATH_DEFINES is
+// set before the first include of <cmath>/<math.h>, which is order-fragile across
+// translation units) — define it locally instead.
+static constexpr double kPi = 3.14159265358979323846;
+
 // ───────────────────────── core/Geometry ─────────────────────────
 TEST(Transform_translate_scale_apply)
 {
@@ -18,7 +23,7 @@ TEST(Transform_translate_scale_apply)
 }
 TEST(Transform_rotation_and_mul)
 {
-    Transform r = Transform::rotation(M_PI / 2); // 90°
+    Transform r = Transform::rotation(kPi / 2); // 90°
     Point p = r.apply(Point{1, 0});
     CHECK_NEAR(p.x, 0.0, 1e-9);
     CHECK_NEAR(p.y, 1.0, 1e-9);
