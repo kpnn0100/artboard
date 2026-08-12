@@ -25,6 +25,18 @@ namespace artboard
         }
     };
 
+    /** How much of a path to draw (FR-42). `start`/`end` are fractions of the path's total
+     *  ARC LENGTH, so a circle's four cubics trim evenly; `offset` is added to both and wraps,
+     *  which is what lets a spinner's arc cross the seam. Defaults draw the whole path. */
+    struct Trim
+    {
+        double start = 0.0;
+        double end = 1.0;
+        double offset = 0.0;
+        /** True when this would draw anything less than the whole path. */
+        bool active() const { return start > 0.0 || end < 1.0 || offset != 0.0; }
+    };
+
     /** Fill then stroke the current path according to `paint`. */
     void applyPaint(IRenderTarget &t, const Paint &paint);
 
@@ -126,6 +138,15 @@ namespace artboard
         /** Number of stored path segments (a `close()` counts as one). */
         int segmentCount() const { return (int)mSegs.size(); }
 
+        /** Total arc length (FR-42). Curves are measured by adaptive sampling, so the value
+         *  is a close approximation rather than a closed form — which is what a trim needs. */
+        double length() const;
+
+        /** The portion between `start` and `end` (fractions of `length()`), with `offset`
+         *  added to both and wrapped. A trimmed closed path is OPEN: the trim is a cut, so
+         *  `close()` is not re-applied. Paint is carried over. */
+        Path trimmed(double start, double end, double offset = 0.0) const;
+
         /** Emit this path's ops + paint into the target's CURRENT transform space, without
          *  touching the graphics state. `onDraw` is exactly this call; a Segment that hosts
          *  a path (PathSegment, FR-37) calls it from `onPaint`, where the segment's world
@@ -141,8 +162,18 @@ namespace artboard
             enum class Op { Move, Line, Quad, Cubic, Close } op;
             double v[6] = {0, 0, 0, 0, 0, 0};
         };
+        struct Piece;   // a measured line/cubic; defined in the .cpp (FR-42)
+        /** This path reduced to measured pieces, for length() and trimmed(). */
+        std::vector<Piece> pieces() const;
+        static Path trimmedRange(const std::vector<Piece> &ps, double total, double a, double b);
         std::vector<Seg> mSegs;
     };
+
+    /** The ellipse outline as a Path — the same geometry `drawCircle` emits, as data, so it
+     *  can be trimmed (FR-42) without a second implementation of the outline. */
+    Path ellipsePath(double cx, double cy, double rx, double ry);
+    /** The (optionally rounded) rectangle outline as a Path; radius is clamped as usual. */
+    Path roundedRectPath(const Rect &rect, double cornerRadius);
 
     /** A run of text at a baseline position. */
     class Text : public Drawable

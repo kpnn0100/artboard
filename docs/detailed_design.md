@@ -326,6 +326,33 @@ Nothing on the behaviour paths reads it, so hit testing, gestures, value/press/c
 and the FR-36 signals are untouched — which is exactly the separation that lets a generated
 subclass keep a control's behaviour and supply its own picture.
 
+## 2n. `Path` trim (FR-42)
+
+`Path::Piece` is one drawable span reduced to a line or a cubic — quadratics are raised to
+cubics on the way in, so the splitter has two cases instead of three, and a `close()` becomes
+the line back to the subpath's start, which is what makes a closed shape trim as one
+continuous run instead of stopping at the seam.
+
+- `measure()` samples a cubic at `kArcSamples` (32) points and accumulates chord lengths,
+  keeping the cumulative marks; `paramAt(d)` then locates a distance by scanning those marks
+  and interpolating within the bracketing pair. Sampling is why `length()` is an
+  approximation — and it is the right one, because a trim needs *arc length*, which has no
+  closed form for a cubic.
+- `slice(t0, t1)` splits by de Casteljau twice — at `t1` to keep the head, then at the
+  rescaled `t0` to drop the tail — so a trimmed curve follows the ORIGINAL curve rather than a
+  polyline through it.
+- `trimmed()` normalises the range first: a span of a full turn or more becomes the whole
+  path; otherwise both ends shift by `floor(start + offset)` so the pair lands in `[0,1)`
+  together. A range that then runs past `1` is emitted as two runs — tail, then head — which
+  is what lets a spinner's arc cross the seam.
+- `trimmedRange()` walks the pieces, skips those wholly outside, slices the partial ones, and
+  emits `moveTo` once. It deliberately does not re-apply `close()`: a trim is a cut.
+
+`ellipsePath()` / `roundedRectPath()` hold the outlines that `drawCircle` / `drawRoundedRect`
+emit, and those two now build and emit a `Path` rather than duplicating the geometry — so the
+shape a trim operates on is the same shape that gets drawn. `CircleSegment`,
+`RectangleSegment` and `PathSegment` each carry a `Trim` and apply it in `onPaint`.
+
 ## 3. `InputController`
 
 `InputController` is an abstract behavior strategy.

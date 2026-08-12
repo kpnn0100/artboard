@@ -708,6 +708,32 @@ nodes hide those nodes, and self-drawn controls skip their `onPaint`. Behaviour 
 testing, gestures, value/press/check state, signals (FR-36) — is unaffected, because the
 appearance and the behaviour are separate concerns.
 
+### FR-42 Path trim
+
+A path shall be reducible to a sub-range of itself, so one shape can become a partial one:
+a trimmed circle is an arc, a trimmed rounded rectangle is a border that draws itself in, a
+trimmed freeform path is a line that grows. Because the range is animatable, this is the
+primitive behind every "draws itself" motion.
+
+- `Path::length()` shall report total arc length, and `Path::trimmed(start, end, offset)`
+  shall return the portion between `start` and `end` — **fractions of that length**, not of
+  the segment count, so a circle's four cubics trim evenly. `offset` is added to both and the
+  result wraps, which is what lets a spinner's arc cross the path's seam.
+- `end < start` after offsetting wraps around the path rather than producing nothing; a range
+  spanning `1` or more returns the whole path; `start == end` returns an empty path.
+- Splitting shall be exact for the segment kinds the path holds (de Casteljau for cubics,
+  quadratics raised to cubics), so a trimmed curve follows the original curve rather than a
+  polyline approximation of it.
+- A trimmed closed path is **open**: `close()` is not re-applied, because the trim is a cut.
+  Stroking it draws the arc; filling it closes the chord implicitly, as any open path does.
+
+`ellipsePath()` and `roundedRectPath()` shall expose the geometry `drawCircle`/
+`drawRoundedRect` already emit as a `Path`, so those shapes can be trimmed without a second
+implementation of their outlines; both drawing helpers shall be defined in terms of them.
+
+`CircleSegment`, `RectangleSegment`, and `PathSegment` shall carry a `Trim` (start / end /
+offset) applied when they paint, so trimming is available wherever a path is drawn.
+
 ## 4. Non-functional Requirements
 
 ### NFR-1 Platform independence

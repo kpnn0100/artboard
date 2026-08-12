@@ -1,4 +1,7 @@
 #include "Shapes.h"
+#include <array>
+#include <cmath>
+#include <vector>
 
 namespace artboard
 {
@@ -16,46 +19,62 @@ namespace artboard
         }
     }
 
-    void drawRoundedRect(IRenderTarget &t, const Rect &rect, double cornerRadius, const Paint &paint)
+    Path roundedRectPath(const Rect &rect, double cornerRadius)
     {
         const double x = rect.x, y = rect.y, w = rect.w, h = rect.h;
-        t.beginPath();
+        Path p;
         if (cornerRadius > 0.0)
         {
             // Clamp radius to half the smaller side.
             double r = cornerRadius;
-            double half = (w < h ? w : h) * 0.5;
+            const double half = (w < h ? w : h) * 0.5;
             if (r > half) r = half;
-            t.moveTo(x + r, y);
-            t.lineTo(x + w - r, y);     t.quadTo(x + w, y, x + w, y + r);
-            t.lineTo(x + w, y + h - r); t.quadTo(x + w, y + h, x + w - r, y + h);
-            t.lineTo(x + r, y + h);     t.quadTo(x, y + h, x, y + h - r);
-            t.lineTo(x, y + r);         t.quadTo(x, y, x + r, y);
-            t.closePath();
+            p.moveTo(x + r, y);
+            p.lineTo(x + w - r, y);     p.quadTo(x + w, y, x + w, y + r);
+            p.lineTo(x + w, y + h - r); p.quadTo(x + w, y + h, x + w - r, y + h);
+            p.lineTo(x + r, y + h);     p.quadTo(x, y + h, x, y + h - r);
+            p.lineTo(x, y + r);         p.quadTo(x, y, x + r, y);
+            p.close();
         }
         else
         {
-            t.moveTo(x, y);
-            t.lineTo(x + w, y);
-            t.lineTo(x + w, y + h);
-            t.lineTo(x, y + h);
-            t.closePath();
+            p.moveTo(x, y);
+            p.lineTo(x + w, y);
+            p.lineTo(x + w, y + h);
+            p.lineTo(x, y + h);
+            p.close();
         }
-        applyPaint(t, paint);
+        return p;
+    }
+
+    Path ellipsePath(double cx, double cy, double rx, double ry)
+    {
+        const double k = 0.5522847498307936;   // cubic bezier circle constant
+        const double ox = rx * k, oy = ry * k;
+        Path p;
+        p.moveTo(cx - rx, cy);
+        p.cubicTo(cx - rx, cy - oy, cx - ox, cy - ry, cx, cy - ry);
+        p.cubicTo(cx + ox, cy - ry, cx + rx, cy - oy, cx + rx, cy);
+        p.cubicTo(cx + rx, cy + oy, cx + ox, cy + ry, cx, cy + ry);
+        p.cubicTo(cx - ox, cy + ry, cx - rx, cy + oy, cx - rx, cy);
+        p.close();
+        return p;
+    }
+
+    // Both drawing helpers go through the builders, so the outline of a circle or a rounded
+    // rect has exactly ONE definition — the one a trim (FR-42) also operates on.
+    void drawRoundedRect(IRenderTarget &t, const Rect &rect, double cornerRadius, const Paint &paint)
+    {
+        Path p = roundedRectPath(rect, cornerRadius);
+        p.paint = paint;
+        p.emit(t);
     }
 
     void drawCircle(IRenderTarget &t, double cx, double cy, double r, const Paint &paint)
     {
-        const double k = 0.5522847498307936;
-        const double ox = r * k, oy = r * k;
-        t.beginPath();
-        t.moveTo(cx - r, cy);
-        t.cubicTo(cx - r, cy - oy, cx - ox, cy - r, cx, cy - r);
-        t.cubicTo(cx + ox, cy - r, cx + r, cy - oy, cx + r, cy);
-        t.cubicTo(cx + r, cy + oy, cx + ox, cy + r, cx, cy + r);
-        t.cubicTo(cx - ox, cy + r, cx - r, cy + oy, cx - r, cy);
-        t.closePath();
-        applyPaint(t, paint);
+        Path p = ellipsePath(cx, cy, r, r);
+        p.paint = paint;
+        p.emit(t);
     }
 
     void drawShadow(IRenderTarget &t, const Rect &rect, double cornerRadius, const Color &color,
@@ -221,10 +240,265 @@ namespace artboard
         return *this;
     }
 
+    // ───────────────────────── trim (FR-42) ─────────────────────────
+    namespace
+    {
+        /** Samples per curve used to measure arc length and to locate a split parameter.
+         *  32 keeps a quarter-circle's length within a fraction of a pixel at UI sizes, which
+         *  is well below what the eye (or a RecordingTarget assertion) can see. */
+        constexpr int kArcSamples = 32;
+
+        Point lerpPoint(const Point &a, const Point &b, double t)
+        {
+            return Point{a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t};
+        }
+        Point cubicAt(const Point &p0, const Point &c1, const Point &c2, const Point &p1, double t)
+        {
+            const Point a = lerpPoint(p0, c1, t), b = lerpPoint(c1, c2, t), c = lerpPoint(c2, p1, t);
+            const Point d = lerpPoint(a, b, t), e = lerpPoint(b, c, t);
+            return lerpPoint(d, e, t);
+        }
+        double dist(const Point &a, const Point &b)
+        {
+            const double dx = b.x - a.x, dy = b.y - a.y;
+            return std::sqrt(dx * dx + dy * dy);
+        }
+
+    }
+
+    /** One drawable piece of a path, already reduced to a line or a cubic. Quadratics are
+     *  raised to cubics so the splitter has exactly two cases instead of three. */
+    struct Path::Piece
+    {
+            bool isCubic = false;
+            Point p0, c1, c2, p1;
+            double length = 0.0;
+            /** Cumulative length at each sample, for locating a split parameter. */
+            std::vector<double> marks;
+
+            void measure()
+            {
+                if (!isCubic)
+                {
+                    length = dist(p0, p1);
+                    return;
+                }
+                marks.assign(kArcSamples + 1, 0.0);
+                Point prev = p0;
+                double acc = 0.0;
+                for (int i = 1; i <= kArcSamples; ++i)
+                {
+                    const Point cur = cubicAt(p0, c1, c2, p1, (double)i / kArcSamples);
+                    acc += dist(prev, cur);
+                    marks[(size_t)i] = acc;
+                    prev = cur;
+                }
+                length = acc;
+            }
+
+            /** The curve parameter at `d` along this piece (0..length). */
+            double paramAt(double d) const
+            {
+                if (!isCubic || length <= 0.0)
+                    return length <= 0.0 ? 0.0 : d / length;
+                for (int i = 1; i <= kArcSamples; ++i)
+                    if (marks[(size_t)i] >= d)
+                    {
+                        const double lo = marks[(size_t)(i - 1)], hi = marks[(size_t)i];
+                        const double f = hi > lo ? (d - lo) / (hi - lo) : 0.0;
+                        return ((double)(i - 1) + f) / kArcSamples;
+                    }
+                return 1.0;
+            }
+
+            /** The sub-piece between two curve parameters, by de Casteljau — so a trimmed
+             *  curve follows the ORIGINAL curve, not a polyline through it. */
+            Piece slice(double t0, double t1) const
+            {
+                Piece out;
+                out.isCubic = isCubic;
+                if (!isCubic)
+                {
+                    out.p0 = lerpPoint(p0, p1, t0);
+                    out.p1 = lerpPoint(p0, p1, t1);
+                    return out;
+                }
+                // Split at t1 first (keep the head), then re-split that at the rescaled t0.
+                const Point a = lerpPoint(p0, c1, t1), b = lerpPoint(c1, c2, t1), c = lerpPoint(c2, p1, t1);
+                const Point d = lerpPoint(a, b, t1), e = lerpPoint(b, c, t1);
+                const Point end = lerpPoint(d, e, t1);
+                const double t = t1 > 0.0 ? t0 / t1 : 0.0;
+                const Point a2 = lerpPoint(p0, a, t), b2 = lerpPoint(a, d, t), c2b = lerpPoint(d, end, t);
+                const Point d2 = lerpPoint(a2, b2, t), e2 = lerpPoint(b2, c2b, t);
+                out.p0 = lerpPoint(d2, e2, t);
+                out.c1 = e2;
+                out.c2 = c2b;
+                out.p1 = end;
+                return out;
+            }
+    };
+
     Path &Path::clear()
     {
         mSegs.clear();
         return *this;
+    }
+
+    /*  Reduce this path to measured pieces. A `close` becomes the line back to the current
+     *  subpath's start, which is what makes a closed shape trim as one continuous run rather
+     *  than stopping at the seam.
+     */
+    std::vector<Path::Piece> Path::pieces() const
+    {
+        std::vector<Path::Piece> out;
+        Point cur{0, 0}, sub{0, 0};
+        bool have = false;
+        auto push = [&](Path::Piece p) {
+            p.measure();
+            if (p.length > 0.0)
+                out.push_back(std::move(p));
+        };
+        for (const auto &s : mSegs)
+        {
+            switch (s.op)
+            {
+            case Seg::Op::Move:
+                cur = sub = Point{s.v[0], s.v[1]};
+                have = true;
+                break;
+            case Seg::Op::Line:
+            {
+                if (!have) { cur = sub = Point{s.v[0], s.v[1]}; have = true; break; }
+                Path::Piece p;
+                p.p0 = cur;
+                p.p1 = Point{s.v[0], s.v[1]};
+                push(p);
+                cur = p.p1;
+                break;
+            }
+            case Seg::Op::Quad:
+            {
+                if (!have) break;
+                // Raise the quadratic to a cubic so the splitter has two cases, not three.
+                const Point q{s.v[0], s.v[1]}, end{s.v[2], s.v[3]};
+                Path::Piece p;
+                p.isCubic = true;
+                p.p0 = cur;
+                p.c1 = Point{cur.x + 2.0 / 3.0 * (q.x - cur.x), cur.y + 2.0 / 3.0 * (q.y - cur.y)};
+                p.c2 = Point{end.x + 2.0 / 3.0 * (q.x - end.x), end.y + 2.0 / 3.0 * (q.y - end.y)};
+                p.p1 = end;
+                push(p);
+                cur = end;
+                break;
+            }
+            case Seg::Op::Cubic:
+            {
+                if (!have) break;
+                Path::Piece p;
+                p.isCubic = true;
+                p.p0 = cur;
+                p.c1 = Point{s.v[0], s.v[1]};
+                p.c2 = Point{s.v[2], s.v[3]};
+                p.p1 = Point{s.v[4], s.v[5]};
+                push(p);
+                cur = p.p1;
+                break;
+            }
+            case Seg::Op::Close:
+            {
+                if (!have) break;
+                Path::Piece p;
+                p.p0 = cur;
+                p.p1 = sub;
+                push(p);
+                cur = sub;
+                break;
+            }
+            }
+        }
+        return out;
+    }
+
+    double Path::length() const
+    {
+        double total = 0.0;
+        for (const auto &p : pieces())
+            total += p.length;
+        return total;
+    }
+
+    Path Path::trimmed(double start, double end, double offset) const
+    {
+        Path out;
+        out.paint = paint;
+        out.transform = transform;
+        out.visible = visible;
+
+        const std::vector<Path::Piece> ps = pieces();
+        double total = 0.0;
+        for (const auto &p : ps)
+            total += p.length;
+        if (ps.empty() || total <= 0.0)
+            return out;
+
+        double a = start + offset, b = end + offset;
+        if (b - a >= 1.0)
+            a = 0.0, b = 1.0;                       // a full turn (or more) is the whole path
+        else
+        {
+            const double wrap = std::floor(a);      // bring the pair into [0,1) together
+            a -= wrap;
+            b -= wrap;
+        }
+        if (b <= a)
+            return out;                             // empty range draws nothing
+
+        // A range that runs past the end wraps around: emit the tail, then the head. This is
+        // what lets a spinner's arc cross the path's seam instead of snapping at it.
+        if (b > 1.0)
+        {
+            Path first = trimmedRange(ps, total, a, 1.0);
+            Path second = trimmedRange(ps, total, 0.0, b - 1.0);
+            out.mSegs = std::move(first.mSegs);
+            for (const auto &s : second.mSegs)
+                out.mSegs.push_back(s);
+            return out;
+        }
+        Path only = trimmedRange(ps, total, a, b);
+        out.mSegs = std::move(only.mSegs);
+        return out;
+    }
+
+    /** The sub-path between two fractions, both already inside [0,1]. */
+    Path Path::trimmedRange(const std::vector<Path::Piece> &ps, double total, double a, double b)
+    {
+        Path out;
+        const double from = a * total, to = b * total;
+        double walked = 0.0;
+        bool started = false;
+        for (const auto &p : ps)
+        {
+            const double pieceStart = walked, pieceEnd = walked + p.length;
+            walked = pieceEnd;
+            if (pieceEnd <= from || pieceStart >= to)
+                continue;                            // entirely outside the range
+
+            const double localFrom = std::max(0.0, from - pieceStart);
+            const double localTo = std::min(p.length, to - pieceStart);
+            const double t0 = p.paramAt(localFrom), t1 = p.paramAt(localTo);
+            const Path::Piece cut = p.slice(t0, t1);
+
+            if (!started)
+            {
+                out.moveTo(cut.p0.x, cut.p0.y);
+                started = true;
+            }
+            if (cut.isCubic)
+                out.cubicTo(cut.c1.x, cut.c1.y, cut.c2.x, cut.c2.y, cut.p1.x, cut.p1.y);
+            else
+                out.lineTo(cut.p1.x, cut.p1.y);
+        }
+        return out;   // deliberately OPEN: a trim is a cut, so close() is not re-applied
     }
 
     void Path::onDraw(IRenderTarget &t) const { emit(t); }

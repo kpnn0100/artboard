@@ -20,6 +20,9 @@ namespace artboard
     class PathSegment : public Segment
     {
     public:
+        /** Draw only part of the path (FR-42): defaults draw all of it. */
+        Trim trim;
+
         /** The geometry + paint. Build it with the usual Path chain:
          *      seg->path.moveTo(0,0).lineTo(10,0).cubicTo(...).close();
          *      seg->path.paint = Paint::stroked(c, 2.0);
@@ -30,6 +33,16 @@ namespace artboard
         void clearPath() { path.clear(); }
 
     protected:
-        void onPaint(IRenderTarget &t) const override { path.emit(t); }
+        void onPaint(IRenderTarget &t) const override
+        {
+            if (!trim.active())
+            {
+                path.emit(t);
+                return;
+            }
+            Path p = path.trimmed(trim.start, trim.end, trim.offset);   // FR-42
+            p.paint = path.paint;
+            p.emit(t);
+        }
     };
 }

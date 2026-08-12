@@ -130,8 +130,13 @@ package ui {
   class RectangleSegment
   class CircleSegment
   class LabelSegment
+  class Trim <<value>> {
+    + start / end / offset  ' FR-42 fractions of arc length
+    + active()
+  }
   class PathSegment {
     + path : Path  ' FR-37 freeform geometry as an interactive node
+    + trim : Trim  ' FR-42
     + clearPath()
   }
   class VisualLoop {

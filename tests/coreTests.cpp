@@ -2460,6 +2460,162 @@ TEST(Suppressing_visuals_leaves_behaviour_intact)
     CHECK(c->checked());
 }
 
+
+// ───────────────────────── FR-42 path trim ─────────────────────────
+TEST(Path_length_measures_arc_length)
+{
+    Path line;
+    line.moveTo(0, 0).lineTo(30, 40);            // a 3-4-5 triangle
+    CHECK_NEAR(line.length(), 50.0, 1e-9);
+
+    Path square;
+    square.moveTo(0, 0).lineTo(10, 0).lineTo(10, 10).lineTo(0, 10).close();
+    CHECK_NEAR(square.length(), 40.0, 1e-9);     // close() contributes its edge
+
+    // A circle of radius 100: four cubics, measured by sampling, within a hair of 2*pi*r.
+    const Path circle = ellipsePath(0, 0, 100, 100);
+    CHECK_NEAR(circle.length(), 2.0 * M_PI * 100.0, 0.5);
+
+    CHECK(Path().length() == 0.0);
+}
+TEST(Path_trim_takes_a_fraction_of_the_arc_length)
+{
+    Path line;
+    line.moveTo(0, 0).lineTo(100, 0);
+    const Path half = line.trimmed(0.0, 0.5);
+    CHECK_NEAR(half.length(), 50.0, 1e-9);
+    Path middle = line.trimmed(0.25, 0.75);
+    CHECK_NEAR(middle.length(), 50.0, 1e-9);
+
+    RecordingTarget t;
+    middle.paint = Paint::stroked(Color::rgba(255, 255, 255), 1.0);
+    middle.render(t);
+    const DrawOp *move = nullptr, *lineTo = nullptr;
+    for (const auto &op : t.ops())
+    {
+        if (!move && op.kind == K::MoveTo) move = &op;
+        if (!lineTo && op.kind == K::LineTo) lineTo = &op;
+    }
+    CHECK(move != nullptr);
+    CHECK(lineTo != nullptr);
+    CHECK_NEAR(move->args[0], 25.0, 1e-9);       // it starts a quarter along
+    CHECK_NEAR(lineTo->args[0], 75.0, 1e-9);     // and ends three quarters along
+}
+TEST(Path_trim_turns_a_circle_into_an_arc)
+{
+    const Path circle = ellipsePath(0, 0, 50, 50);
+    const double full = circle.length();
+
+    Path quarter = circle.trimmed(0.0, 0.25);
+    CHECK_NEAR(quarter.length(), full * 0.25, full * 0.01);
+    const Path threeQuarters = circle.trimmed(0.0, 0.75);
+    CHECK_NEAR(threeQuarters.length(), full * 0.75, full * 0.01);
+
+    // The arc follows the CURVE, not a chord: the trimmed piece is emitted as cubics.
+    RecordingTarget t;
+    quarter.paint = Paint::stroked(Color::rgba(255, 255, 255), 2.0);
+    quarter.render(t);
+    CHECK(t.count(K::CubicTo) >= 1);
+    CHECK(t.count(K::ClosePath) == 0);           // a trim is a cut: the result is OPEN
+    CHECK(t.count(K::StrokePath) == 1);
+
+    // Every point of the arc still lies on the circle of radius 50.
+    for (const auto &op : t.ops())
+    {
+        if (op.kind != K::MoveTo && op.kind != K::CubicTo) continue;
+        const int last = op.kind == K::MoveTo ? 0 : 4;
+        const double r = std::hypot(op.args[last], op.args[last + 1]);
+        CHECK_NEAR(r, 50.0, 0.5);
+    }
+}
+TEST(Path_trim_edge_ranges)
+{
+    const Path circle = ellipsePath(0, 0, 20, 20);
+    const double full = circle.length();
+
+    CHECK_NEAR(circle.trimmed(0.0, 1.0).length(), full, 1e-6);   // the whole path
+    CHECK_NEAR(circle.trimmed(0.0, 5.0).length(), full, 1e-6);   // more than a turn: clamped
+    CHECK(circle.trimmed(0.5, 0.5).segmentCount() == 0);         // empty range draws nothing
+    CHECK(circle.trimmed(0.8, 0.2).segmentCount() == 0);         // end before start, no offset
+    CHECK(Path().trimmed(0.0, 0.5).segmentCount() == 0);         // nothing to trim
+}
+TEST(Path_trim_offset_wraps_around_the_seam)
+{
+    // A spinner's arc has to be able to sit across the path's start point.
+    const Path circle = ellipsePath(0, 0, 40, 40);
+    const double full = circle.length();
+    const Path wrapped = circle.trimmed(0.9, 1.1);   // 0.9 -> 0.1 the long way round the seam
+    CHECK_NEAR(wrapped.length(), full * 0.2, full * 0.02);
+
+    // The same arc reached by offsetting instead: same length, different place.
+    const Path offset = circle.trimmed(0.0, 0.2, 0.9);
+    CHECK_NEAR(offset.length(), full * 0.2, full * 0.02);
+    CHECK(offset.segmentCount() > 0);
+}
+TEST(Trim_defaults_are_inert_and_visual_nodes_honour_it)
+{
+    Trim t;
+    CHECK(!t.active());
+    t.end = 0.5;
+    CHECK(t.active());
+
+    auto circle = std::make_shared<CircleSegment>();
+    circle->width.set(80);
+    circle->height.set(80);
+    circle->style.paint = Paint::stroked(Color::rgba(255, 255, 255), 3.0);
+
+    RecordingTarget whole;
+    circle->render(whole);
+    CHECK(whole.count(K::ClosePath) == 1);       // untrimmed: still a closed circle
+
+    circle->trim.end = 0.25;
+    RecordingTarget arc;
+    circle->render(arc);
+    CHECK(arc.count(K::ClosePath) == 0);         // trimmed: an open arc
+    CHECK(arc.count(K::CubicTo) < whole.count(K::CubicTo));
+    CHECK(arc.count(K::StrokePath) == 1);
+
+    auto rect = std::make_shared<RectangleSegment>();
+    rect->width.set(60);
+    rect->height.set(40);
+    rect->style.paint = Paint::stroked(Color::rgba(255, 255, 255), 2.0);
+    rect->trim.end = 0.5;
+    RecordingTarget half;
+    rect->render(half);
+    CHECK(half.count(K::ClosePath) == 0);
+    CHECK(half.count(K::LineTo) >= 1);
+
+    auto path = std::make_shared<PathSegment>();
+    path->path.moveTo(0, 0).lineTo(100, 0);
+    path->path.paint = Paint::stroked(Color::rgba(255, 255, 255), 1.0);
+    path->trim.start = 0.5;
+    RecordingTarget tail;
+    path->render(tail);
+    const DrawOp *move = nullptr;
+    for (const auto &op : tail.ops())
+        if (op.kind == K::MoveTo) { move = &op; break; }
+    CHECK(move != nullptr);
+    CHECK_NEAR(move->args[0], 50.0, 1e-9);
+}
+TEST(Path_trim_handles_quadratics_and_multiple_subpaths)
+{
+    Path p;
+    p.moveTo(0, 0).quadTo(50, 50, 100, 0);        // a quadratic is raised to a cubic to split
+    const double full = p.length();
+    CHECK(full > 100.0);
+    Path half = p.trimmed(0.0, 0.5);
+    CHECK_NEAR(half.length(), full * 0.5, full * 0.02);
+    RecordingTarget t;
+    half.paint = Paint::stroked(Color::rgba(255, 255, 255), 1.0);
+    half.render(t);
+    CHECK(t.count(K::CubicTo) == 1);
+
+    Path two;
+    two.moveTo(0, 0).lineTo(10, 0).moveTo(0, 10).lineTo(10, 10);
+    CHECK_NEAR(two.length(), 20.0, 1e-9);         // a move does not add length
+    CHECK_NEAR(two.trimmed(0.0, 0.5).length(), 10.0, 1e-9);
+}
+
 // ───────────────────────── widgets ─────────────────────────
 TEST(Knob_drag_keys_and_render)
 {

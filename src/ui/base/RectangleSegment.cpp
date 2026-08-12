@@ -4,6 +4,10 @@ namespace artboard
 {
     void RectangleSegment::onPaint(IRenderTarget &t) const
     {
-        drawRoundedRect(t, localBounds(), style.cornerRadius, style.paint);
+        Path p = roundedRectPath(localBounds(), style.cornerRadius);
+        if (trim.active())
+            p = p.trimmed(trim.start, trim.end, trim.offset);   // FR-42
+        p.paint = style.paint;
+        p.emit(t);
     }
 }
