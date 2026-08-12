@@ -49,11 +49,21 @@ namespace artboard
         double displayValue() const { if (!mDisplayInit) { mDisplay.reset(value()); mDisplayInit = true; } return mDisplay.value(); }
 
     protected:
+        // ---- signal hooks (FR-36) ----
+        // Fired alongside the public `onChange` callback, for subclasses that animate
+        // their own visuals from the control's state instead of subscribing to it.
+        virtual void onDragStart() {}
+        virtual void onValueChanged(double v) { (void)v; }
+        virtual void onDragEnd() {}
+
         void onPaint(IRenderTarget &t) const override;  // gradient track (when set)
         bool handleGesture(const Gesture &g, const Point &localPoint) override;
         bool handleKey(const KeyEvent &event) override;
 
     private:
+        /** Fire the FR-36 hook and the public callback together, so no call site can
+         *  update one and forget the other. */
+        void notifyChange();
         void ensureVisualTree() const;
         void syncVisuals() const;
         double valueForLocalX(double localX) const;
@@ -62,6 +72,7 @@ namespace artboard
 
         SliderStyle mStyle;
         bool mClickJumps = true;
+        bool mDragging = false;   // FR-36: drag-start/end edge tracking
         mutable std::shared_ptr<RectangleSegment> mTrack;
         mutable std::shared_ptr<RectangleSegment> mRangeFill;
         mutable std::shared_ptr<RectangleSegment> mSubFill;  // reference reach thumb -> thumb+offset

@@ -221,7 +221,15 @@ namespace artboard
         return *this;
     }
 
-    void Path::onDraw(IRenderTarget &t) const
+    Path &Path::clear()
+    {
+        mSegs.clear();
+        return *this;
+    }
+
+    void Path::onDraw(IRenderTarget &t) const { emit(t); }
+
+    void Path::emit(IRenderTarget &t) const
     {
         t.beginPath();
         for (const auto &s : mSegs)

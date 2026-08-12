@@ -24,6 +24,10 @@ namespace artboard
         void advance(double nowMs) override;
 
     protected:
+        /** Signal hook (FR-36): the checked state changed, by pointer or keyboard.
+         *  Not fired by the programmatic setChecked(). */
+        virtual void onCheckedChanged(bool checked) { (void)checked; }
+
         bool handleGesture(const Gesture &g, const Point &localPoint) override;
         bool handleKey(const KeyEvent &event) override;
 

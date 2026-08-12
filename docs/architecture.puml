@@ -123,10 +123,25 @@ package ui {
     + isHoverWithin()  ' self-or-descendant hover (containers)
     + {static} setHovered(seg) / hoveredSegment()
     # onPaint() / onOverlay()
+    # onHoverChanged(b) / onFocusChanged(b)  ' FR-36 signal hooks
   }
   class RectangleSegment
   class CircleSegment
   class LabelSegment
+  class PathSegment {
+    + path : Path  ' FR-37 freeform geometry as an interactive node
+    + clearPath()
+  }
+  class VisualLoop {
+    + start(nowMs) / stop(nowMs)  ' FR-34 indeterminate lifecycle
+    + setCycleMs(ms) / cyclePhase() / cycleCount()
+    # onLoopStart() / onCycle(i) / onLoopEnd()
+  }
+  class ProgressIndicator {
+    + setValue(v) / value() / displayValue()  ' FR-35 determinate state
+    + setIndeterminate(on) / phase()
+    # onValueChanged(v) / onComplete() / onIndeterminate() / onDeterminate()
+  }
   class LinearLayout
   class Row
   class Column
@@ -169,6 +184,11 @@ package ui {
   RectangleSegment --|> Segment
   CircleSegment --|> Segment
   LabelSegment --|> Segment
+  PathSegment --|> Segment
+  PathSegment *--> Path
+  VisualLoop --|> Segment
+  ProgressIndicator --|> Segment
+  ProgressIndicator ..> Spring
   LinearLayout --|> Segment
   Row --|> LinearLayout
   Column --|> LinearLayout
@@ -193,11 +213,10 @@ package ui {
   TabView ..> Spring
   ComboBox ..> Spring
   ScrollView ..> Spring
-  ProgressBar ..> Spring
   LineGraph ..> Spring
   Interaction ..> Theme
   ToggleSwitch --|> Segment
-  ProgressBar --|> Segment
+  ProgressBar --|> ProgressIndicator
   ComboBox --|> Segment
   TabView --|> Segment
   ScrollView --|> Segment

@@ -97,5 +97,6 @@ namespace artboard
     {
         mChecked = !mChecked;
         mCheck.animateTo(mChecked ? 1.0 : 0.0, 140.0, Easing::EaseOutCubic, mNowMs);
+        onCheckedChanged(mChecked);  // FR-36
     }
 }

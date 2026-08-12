@@ -121,6 +121,16 @@ namespace artboard
         Path &close();
         /** Append a smooth Catmull-Rom spline through `pts` (converted to cubics). */
         Path &spline(const std::vector<Point> &pts);
+        /** Drop every segment; the paint is kept. */
+        Path &clear();
+        /** Number of stored path segments (a `close()` counts as one). */
+        int segmentCount() const { return (int)mSegs.size(); }
+
+        /** Emit this path's ops + paint into the target's CURRENT transform space, without
+         *  touching the graphics state. `onDraw` is exactly this call; a Segment that hosts
+         *  a path (PathSegment, FR-37) calls it from `onPaint`, where the segment's world
+         *  transform is already installed — so path geometry has one implementation, not two. */
+        void emit(IRenderTarget &t) const;
 
     protected:
         void onDraw(IRenderTarget &t) const override;

@@ -8,25 +8,26 @@ namespace artboard
         height.set(10.0);
     }
 
-    void ProgressBar::setValue(double v)
-    {
-        mValue = v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v);
-        mDisplay.setTarget(mValue);  // the shown level eases toward the new value
-    }
-
-    void ProgressBar::advance(double nowMs)
-    {
-        const double dt = mLastMs < 0.0 ? 0.0 : (nowMs - mLastMs) / 1000.0;
-        mLastMs = nowMs;
-        mDisplay.advance(dt);
-        Segment::advance(nowMs);
-    }
-
     void ProgressBar::onPaint(IRenderTarget &t) const
     {
         const double w = width.value(), h = height.value();
-        const double shown = mDisplay.value();
         drawRoundedRect(t, Rect{0, 0, w, h}, mStyle.track.cornerRadius, mStyle.track.paint);
+
+        if (indeterminate())
+        {
+            // A shuttle sweeps left->right and wraps; clipped to the track so it never
+            // spills past the ends (R3/§2A: unknown progress must still read as motion).
+            const double sw = w * (mShuttle < 0.0 ? 0.0 : (mShuttle > 1.0 ? 1.0 : mShuttle));
+            const double travel = w + sw;                 // enter from the left, exit right
+            const double x = phase() * travel - sw;
+            t.save();
+            t.clipRect(0, 0, w, h);  // the shuttle enters and exits behind the track ends
+            drawRoundedRect(t, Rect{x, 0, sw, h}, mStyle.fill.cornerRadius, mStyle.fill.paint);
+            t.restore();
+            return;
+        }
+
+        const double shown = displayValue();
         if (shown > 1e-4)  // near-zero draws no fill (also avoids a sub-pixel sliver)
             drawRoundedRect(t, Rect{0, 0, w * shown, h}, mStyle.fill.cornerRadius, mStyle.fill.paint);
     }

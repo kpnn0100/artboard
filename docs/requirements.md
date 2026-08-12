@@ -15,6 +15,8 @@ The system covers:
 - Pointer and keyboard interaction through platform-free input abstractions.
 - Composite UI objects through `Segment`.
 - A baseline theme and basic controls: `Button`, `Slider`, `Checkbox`, and `TextBox`.
+- Authorable bases for custom animated components: `VisualLoop` (indeterminate lifecycle) and
+  `ProgressIndicator` (determinate state), plus protected signal hooks on the basic controls.
 - A rectangular and path clip primitive on the render HAL, and clip-to-bounds for segments.
 - An opacity-group compositing primitive (`pushLayer`/`popLayer`) on the render HAL, and
   animated per-segment group opacity, rotation, scale, and pivot built on it.
@@ -578,6 +580,77 @@ with no extra code. `advance(nowMs)` shall tick all five properties.
 
 This gives FR-25-compliant motion for the transform channel: spin, pop, and squash animations are
 animated properties, not per-frame transform arithmetic re-derived by every application.
+
+### FR-34 VisualLoop authorable base
+
+The framework shall provide `VisualLoop`, a `Segment` subclass that owns the **lifecycle** of an
+indeterminate, looping visual (spinner, busy pulse, loading screen) and draws nothing itself:
+
+- `start(nowMs)` begins the loop and fires `onLoopStart()`; it is idempotent while running.
+  `stop(nowMs)` ends it and fires `onLoopEnd()`; it is a no-op when stopped. `start()` resets the
+  cycle counter.
+- `setCycleMs(ms)` sets the loop period. Each completed period fires `onCycle(index)` exactly once,
+  counting from 1 — including when several periods elapse inside a single long frame, so
+  `cycleCount()` stays exact and a subclass keyed to `onCycle` never skips a beat. A period `<= 0`
+  disables cycle signals; the loop still runs.
+- `cyclePhase()` reports progress through the current cycle in `[0,1)`; `elapsedMs()` reports time
+  since `start()`. Both read `0` when stopped.
+- `now()` (protected) exposes the last host timestamp so a subclass can pass it straight to
+  `Property::animate` from inside a signal.
+- It is `inputTransparent` by default: a busy indicator is chrome, not a control.
+
+The class shall contain no timing source of its own — the host's `advance(nowMs)` is the only clock,
+keeping it platform-free and deterministic under test.
+
+### FR-35 ProgressIndicator authorable base
+
+The framework shall provide `ProgressIndicator`, the determinate counterpart to FR-34: a `Segment`
+subclass that owns progress **state** and draws nothing.
+
+- `setValue(v)` clamps to `[0,1]`, retargets a `Spring` display follower (FR-4d) so the drawn level
+  eases and never snaps, and fires `onValueChanged(v)`. `onComplete()` is edge-triggered: it fires
+  once when the value first reaches `1`, and re-arms when the value drops below `1`.
+- `displayValue()` is the spring-smoothed level a subclass paints; `setDisplayOmega()` tunes the
+  settle speed from the FR-31 motion tokens.
+- `setIndeterminate(on)` switches modes and fires `onIndeterminate()` / `onDeterminate()` on the
+  edge only. While indeterminate, `phase()` free-runs in `[0,1)` at `periodMs()` per sweep; a
+  period `<= 0` freezes it.
+- It is non-interactive (`hitTestSelf` is false): progress is a readout, not a control.
+
+`ProgressBar` shall be re-based on `ProgressIndicator` and retain only its appearance, gaining an
+indeterminate look in which a shuttle of `setShuttleFraction()` of the track width sweeps across and
+is clipped to the track. This is the same separation of state from appearance that FR-9 already
+requires of `AbstractSlider`/`Slider`.
+
+### FR-36 Control signal hooks
+
+Every interactive control shall expose its state changes as **protected virtual hooks** in addition
+to the public `std::function` callbacks a caller subscribes to. The callbacks serve *users* of a
+control; the hooks serve *subclasses* of it, which is the authoring model a generated or
+hand-written custom control needs. Hooks fire before the corresponding public callback so a
+subclass's own state is settled when the caller's handler runs.
+
+- `Segment`: `onHoverChanged(bool)` and `onFocusChanged(bool)`, both edge-triggered. No signal is
+  emitted while a segment is being destroyed.
+- `Button`: `onPressDown()`, `onRelease()`, `onCancel()` (press abandoned), `onClicked()` (pointer
+  or keyboard confirm).
+- `Slider`: `onDragStart()` (once per drag, not per move), `onValueChanged(v)`, `onDragEnd()`.
+  Every value-changing path — drag, deferred click-jump, keyboard step, double-click reset — routes
+  through one internal notifier so the hook and the public callback cannot diverge.
+- `Checkbox`: `onCheckedChanged(bool)`, fired by user interaction only, not by programmatic
+  `setChecked()`.
+
+### FR-37 PathSegment
+
+The framework shall provide `PathSegment`, a `Segment` that hosts a `Path` drawable so freeform
+geometry is a first-class interactive node alongside `RectangleSegment`, `CircleSegment`, and
+`LabelSegment` — able to participate in layout, hover, group opacity (FR-32), and the transform
+channel (FR-33). The path is built in the segment's local space.
+
+To avoid a second implementation of path emission, `Path` shall expose `emit(target)`, which writes
+its ops and paint into the target's *current* transform space without touching graphics state;
+`Path::onDraw` and `PathSegment::onPaint` both call it. `Path` shall also expose `clear()` and
+`segmentCount()` so authored geometry can be rebuilt and inspected.
 
 ## 4. Non-functional Requirements
 

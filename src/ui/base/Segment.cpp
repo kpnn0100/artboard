@@ -22,7 +22,7 @@ namespace artboard
 
     Segment::~Segment()
     {
-        clearFocusRegistration();
+        clearFocusRegistration(false);  // no signals during destruction
         if (hoverSlot() == this) // relinquish hover so no dangling owner remains
             hoverSlot() = nullptr;
     }
@@ -56,6 +56,7 @@ namespace artboard
         {
             mHoverPrev = h;
             mHoverAmount.animateTo(h ? 1.0 : 0.0, interaction::kHoverMs, Easing::EaseOutCubic, nowMs);
+            onHoverChanged(h);  // FR-36
         }
         mHoverAmount.update(nowMs);
     }
@@ -293,10 +294,17 @@ namespace artboard
         auto &registry = focusRegistry();
         auto found = registry.find(focusIndex);
         if (found != registry.end() && found->second && found->second != this)
-            found->second->mFocused = false;
+        {
+            Segment *prev = found->second;
+            prev->mFocused = false;
+            prev->onFocusChanged(false);  // FR-36
+        }
 
         registry[focusIndex] = this;
+        const bool gained = !mFocused;
         mFocused = true;
+        if (gained)
+            onFocusChanged(true);  // FR-36
     }
 
     Segment *Segment::focusedInGroup(int focusIndex)
@@ -403,12 +411,17 @@ namespace artboard
         return handled;
     }
 
-    void Segment::clearFocusRegistration()
+    void Segment::clearFocusRegistration(bool notify)
     {
         auto &registry = focusRegistry();
         auto found = registry.find(focusIndex);
         if (found != registry.end() && found->second == this)
             registry.erase(found);
-        mFocused = false;
+        if (mFocused)
+        {
+            mFocused = false;
+            if (notify)
+                onFocusChanged(false);  // FR-36
+        }
     }
 }

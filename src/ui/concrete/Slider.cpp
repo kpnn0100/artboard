@@ -34,7 +34,7 @@ namespace artboard
             {
                 mPendingClick = false;
                 setValue(mPendingValue);
-                if (onChange) onChange(value());
+                notifyChange();
             }
         }
         double dt = mLastMs < 0.0 ? 0.0 : (nowMs - mLastMs) / 1000.0;
@@ -91,14 +91,20 @@ namespace artboard
         return n < 0.0 ? 0.0 : (n > 1.0 ? 1.0 : n);
     }
 
+    void Slider::notifyChange()
+    {
+        onValueChanged(value());   // FR-36 hook first, so a subclass's state is settled
+        if (onChange)
+            onChange(value());     // then the caller's subscription
+    }
+
     bool Slider::handleGesture(const Gesture &g, const Point &localPoint)
     {
         if (g.type == Gesture::Type::DoubleClick)
         {
             mPendingClick = false;   // cancel any deferred click-jump: reset wins cleanly
             resetToDefault();
-            if (onChange)
-                onChange(value());
+            notifyChange();
             return true;
         }
         // A drag sets the value immediately (unambiguous). A click-to-position jump is
@@ -107,9 +113,22 @@ namespace artboard
         if (g.type == Gesture::Type::Drag || g.type == Gesture::Type::DragStart)
         {
             mPendingClick = false;
+            if (!mDragging)
+            {
+                mDragging = true;
+                onDragStart();  // FR-36
+            }
             setValue(valueForLocalX(localPoint.x));
-            if (onChange)
-                onChange(value());
+            notifyChange();
+            return true;
+        }
+        if (g.type == Gesture::Type::Drop)
+        {
+            if (mDragging)
+            {
+                mDragging = false;
+                onDragEnd();  // FR-36
+            }
             return true;
         }
         if (g.type == Gesture::Type::Click && mClickJumps)
@@ -139,15 +158,13 @@ namespace artboard
         if (event.keyCode == 37)
         {
             setValue(value() - step);
-            if (onChange)
-                onChange(value());
+            notifyChange();
             return true;
         }
         if (event.keyCode == 39)
         {
             setValue(value() + step);
-            if (onChange)
-                onChange(value());
+            notifyChange();
             return true;
         }
         return Segment::handleKey(event);

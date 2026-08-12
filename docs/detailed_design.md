@@ -225,6 +225,61 @@ Linear layout containers (`ui/base/LinearLayout`, `ui/concrete/Row`, `ui/concret
   insert/remove animation is out of scope — FR-25 governs a control's own visible state, not
   container membership churn).
 
+## 2g. `VisualLoop` (FR-34)
+
+The authorable base for indeterminate looping visuals. State: `mRunning`, `mStartMs`, `mNowMs`,
+`mCycleMs`, `mCycles`.
+
+- `start(nowMs)` is guarded on `mRunning` (idempotent), stamps `mStartMs`/`mNowMs`, zeroes the cycle
+  counter, then fires `onLoopStart()` — so `now()` is already valid inside the signal.
+- `advance(nowMs)` stamps `mNowMs`, and while running with `mCycleMs > 0` computes
+  `completed = floor((nowMs - mStartMs) / mCycleMs)` and fires `onCycle(++mCycles)` in a loop until
+  `mCycles == completed`. The loop (rather than a single "did it wrap" test) is what makes a long
+  frame emit one signal per elapsed cycle instead of collapsing them.
+- `cyclePhase()` returns the fractional part of `elapsed / mCycleMs`; elapsed is never negative
+  while running, so a truncating cast is the correct floor.
+- Constructor sets `inputTransparent = true`.
+
+## 2h. `ProgressIndicator` (FR-35)
+
+The determinate counterpart. State: `mValue`, `mIndeterminate`, `mCompleted` (the `onComplete`
+latch), `mPhase`, `mPeriodMs`, `mOmega`, and a `Spring mDisplay`.
+
+- `setValue(v)` clamps, retargets the spring, fires `onValueChanged`, then runs the completion
+  latch: fire `onComplete()` on the `< 1 -> 1` edge, and clear the latch whenever the value is below
+  `1` so a reused indicator can complete again.
+- `advance(nowMs)` derives `dt` from the previous timestamp, advances the spring at `mOmega`, and —
+  only while indeterminate with `mPeriodMs > 0` — advances `mPhase` by `dt*1000/mPeriodMs` and wraps
+  it into `[0,1)`.
+- `hitTestSelf` returns false; the constructor sets `inputTransparent`.
+
+`ProgressBar` keeps only `ProgressStyle` + `mShuttle` and paints: track, then either the
+`displayValue()` fill or (indeterminate) a shuttle of width `w*mShuttle` at
+`x = phase*(w+sw) - sw`, drawn inside a `clipRect` of the track so it enters and exits behind the
+ends.
+
+## 2i. Signal hooks (FR-36)
+
+Protected virtuals fired from the state transitions themselves, never from the render path:
+
+- `Segment::updateHoverAnim` fires `onHoverChanged(h)` on the same edge that starts the hover tween.
+- `Segment::requestFocus` fires `onFocusChanged(false)` on the segment it displaces and
+  `onFocusChanged(true)` on itself only when focus was actually gained.
+  `clearFocusRegistration(bool notify)` fires `onFocusChanged(false)`; the destructor passes
+  `notify = false` so no virtual is dispatched on a dying object.
+- `Button` fires `onPressDown` on `Down`, `onRelease` + `onClicked` on a `Click` that completes a
+  press, `onCancel` on a `Drop` that abandons one, and `onClicked` on keyboard confirm.
+- `Slider::notifyChange()` is the single funnel: `onValueChanged(value())` then the public
+  `onChange`. Every mutating path calls it. `mDragging` gives `onDragStart`/`onDragEnd` their edges.
+- `Checkbox::toggle()` fires `onCheckedChanged`; `setChecked()` deliberately does not.
+
+## 2j. `PathSegment` (FR-37)
+
+`Path` gains `emit(t)` (ops + `applyPaint`, no graphics-state changes), `clear()`, and
+`segmentCount()`. `Path::onDraw` becomes a one-line call to `emit`, and `PathSegment::onPaint` is
+the same one-line call — the segment's `render()` has already installed the world transform, so the
+path's local coordinates land in segment space with no second transform path to keep in sync.
+
 ## 3. `InputController`
 
 `InputController` is an abstract behavior strategy.

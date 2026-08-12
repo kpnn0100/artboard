@@ -260,7 +260,11 @@ The `ui` module is split by role into two folders, **one class per file** for ma
   - `Observable<T>` (a single-source-of-truth value with change notification: several UI nodes
     bind one value via `observe()` so a toggle button and the panel it controls can't drift out
     of sync — FR-23),
-  - `RectangleSegment`, `CircleSegment`, `LabelSegment` (reusable visual nodes).
+  - `RectangleSegment`, `CircleSegment`, `LabelSegment`, `PathSegment` (reusable visual nodes;
+    `PathSegment` hosts a `Path` via its new `emit()` so path geometry has one implementation, FR-37).
+  - `VisualLoop` (FR-34) and `ProgressIndicator` (FR-35): authorable bases that own a custom
+    component's *lifecycle/state* and draw nothing, so an application (or a Genesis-generated class)
+    subclasses them and supplies only the picture. `ProgressBar` is now one such subclass.
 - **`ui/concrete/`** — the finished, themed controls, each its own file:
   - baseline: `Button`, `Slider`, `Checkbox`, `TextBox`,
   - extended: `Knob`, `ToggleSwitch`, `ProgressBar`, `ComboBox`, `TabView`, `ScrollView`,

@@ -1646,6 +1646,446 @@ TEST(Segment_transform_properties_are_ticked_and_render_emits_them)
     CHECK_NEAR(seg->pivotY.value(), 9.0, 1e-9);
 }
 
+
+// ───────────────────────── FR-34 VisualLoop ─────────────────────────
+namespace
+{
+    struct TestLoop : VisualLoop
+    {
+        int starts = 0, ends = 0;
+        std::vector<int> cycles;
+        double startNow = -1;
+        void onLoopStart() override { ++starts; startNow = now(); }
+        void onCycle(int i) override { cycles.push_back(i); }
+        void onLoopEnd() override { ++ends; }
+    };
+}
+TEST(VisualLoop_start_stop_are_edge_triggered_and_idempotent)
+{
+    auto l = std::make_shared<TestLoop>();
+    CHECK(!l->running());
+    CHECK(l->cyclePhase() == 0.0);       // stopped: no phase
+    CHECK(l->elapsedMs() == 0.0);
+
+    l->start(100.0);
+    CHECK(l->running());
+    CHECK(l->starts == 1);
+    CHECK_NEAR(l->startNow, 100.0, 1e-12);   // now() is valid inside the signal
+    l->start(200.0);                          // re-start while running: ignored
+    CHECK(l->starts == 1);
+
+    l->advance(600.0);
+    CHECK_NEAR(l->elapsedMs(), 500.0, 1e-9);
+
+    l->stop(700.0);
+    CHECK(!l->running());
+    CHECK(l->ends == 1);
+    l->stop(800.0);                           // stop while stopped: ignored
+    CHECK(l->ends == 1);
+    CHECK(l->elapsedMs() == 0.0);
+}
+TEST(VisualLoop_cycles_fire_once_each_even_across_a_long_frame)
+{
+    auto l = std::make_shared<TestLoop>();
+    l->setCycleMs(100.0);
+    CHECK_NEAR(l->cycleMs(), 100.0, 1e-12);
+    l->start(0.0);
+
+    l->advance(50.0);
+    CHECK(l->cycles.empty());
+    CHECK_NEAR(l->cyclePhase(), 0.5, 1e-9);
+
+    l->advance(150.0);
+    CHECK(l->cycles.size() == 1);
+    CHECK(l->cycles[0] == 1);
+    CHECK(l->cycleCount() == 1);
+
+    l->advance(520.0);                        // a long frame spanning 3 more cycles
+    CHECK(l->cycles.size() == 5);             // 1..5, none skipped
+    CHECK(l->cycles.back() == 5);
+    CHECK(l->cycleCount() == 5);
+    CHECK_NEAR(l->cyclePhase(), 0.2, 1e-9);
+
+    l->stop(600.0);
+    l->advance(900.0);                        // stopped: no more cycles
+    CHECK(l->cycleCount() == 5);
+
+    l->start(1000.0);                         // restart resets the counter
+    CHECK(l->cycleCount() == 0);
+}
+TEST(VisualLoop_cycleMs_zero_disables_cycle_signals_and_is_input_transparent)
+{
+    auto l = std::make_shared<TestLoop>();
+    l->width.set(50); l->height.set(50);
+    l->setCycleMs(0.0);
+    l->start(0.0);
+    l->advance(10000.0);
+    CHECK(l->cycles.empty());
+    CHECK(l->cyclePhase() == 0.0);
+    CHECK(l->inputTransparent);          // chrome, not a control
+    CHECK(!l->hitTest(Point{10, 10}));
+}
+TEST(VisualLoop_subclass_animates_from_the_signal)
+{
+    struct FadeLoop : VisualLoop
+    {
+        std::shared_ptr<RectangleSegment> ring = std::make_shared<RectangleSegment>();
+        FadeLoop()
+        {
+            ring->width.set(20); ring->height.set(20);
+            ring->style.paint = Paint::filled(Color::rgba(0, 200, 255));
+            ring->opacity.set(0.0);
+            addChild(ring);
+        }
+        void onLoopStart() override
+        {
+            ring->opacity.animate(Tween::range(0.0, 1.0, 200.0).withEasing(Easing::Linear), now());
+        }
+    };
+    auto l = std::make_shared<FadeLoop>();
+    l->start(0.0);
+    l->advance(0.0);
+    CHECK_NEAR(l->ring->opacity.value(), 0.0, 1e-9);
+    l->advance(100.0);
+    CHECK_NEAR(l->ring->opacity.value(), 0.5, 1e-9);
+    RecordingTarget t;
+    l->render(t);
+    CHECK(t.count(K::PushLayer) == 1);       // the fade really composites (FR-32)
+    l->advance(200.0);
+    CHECK_NEAR(l->ring->opacity.value(), 1.0, 1e-9);
+}
+
+// ───────────────────────── FR-35 ProgressIndicator ─────────────────────────
+namespace
+{
+    struct TestProgress : ProgressIndicator
+    {
+        std::vector<double> changes;
+        int completes = 0, indets = 0, dets = 0;
+        void onValueChanged(double v) override { changes.push_back(v); }
+        void onComplete() override { ++completes; }
+        void onIndeterminate() override { ++indets; }
+        void onDeterminate() override { ++dets; }
+    };
+}
+TEST(ProgressIndicator_clamps_signals_and_completes_on_the_edge)
+{
+    auto p = std::make_shared<TestProgress>();
+    p->setValue(-1.0);
+    CHECK_NEAR(p->value(), 0.0, 1e-12);
+    p->setValue(0.5);
+    CHECK_NEAR(p->value(), 0.5, 1e-12);
+    p->setValue(2.0);
+    CHECK_NEAR(p->value(), 1.0, 1e-12);
+    CHECK(p->changes.size() == 3);
+    CHECK(p->completes == 1);
+    p->setValue(1.0);            // still complete: no second signal
+    CHECK(p->completes == 1);
+    p->setValue(0.2);            // drops below: re-arms
+    p->setValue(1.0);
+    CHECK(p->completes == 2);
+}
+TEST(ProgressIndicator_display_eases_and_never_snaps)
+{
+    auto p = std::make_shared<TestProgress>();
+    p->advance(0.0);
+    p->setValue(1.0);
+    CHECK_NEAR(p->displayValue(), 0.0, 1e-12);   // the value jumped; the display has not
+    p->advance(50.0);
+    const double mid = p->displayValue();
+    CHECK(mid > 0.0);
+    CHECK(mid < 1.0);                             // interpolating, not jumping
+    for (int i = 1; i <= 40; ++i)
+        p->advance(50.0 + i * 20.0);
+    CHECK_NEAR(p->displayValue(), 1.0, 1e-2);     // and it settles
+    p->setDisplayOmega(motion::kEffectsFast);
+    CHECK(p->indeterminate() == false);
+}
+TEST(ProgressIndicator_indeterminate_phase_wraps_and_signals_are_edge_triggered)
+{
+    auto p = std::make_shared<TestProgress>();
+    p->setPeriodMs(1000.0);
+    CHECK_NEAR(p->periodMs(), 1000.0, 1e-12);
+    p->advance(0.0);
+    p->setIndeterminate(true);
+    CHECK(p->indets == 1);
+    p->setIndeterminate(true);        // no change: no re-fire
+    CHECK(p->indets == 1);
+
+    p->advance(250.0);
+    CHECK_NEAR(p->phase(), 0.25, 1e-9);
+    p->advance(1250.0);               // wraps
+    CHECK_NEAR(p->phase(), 0.25, 1e-9);
+
+    p->setPeriodMs(0.0);              // frozen
+    p->advance(2000.0);
+    CHECK_NEAR(p->phase(), 0.25, 1e-9);
+
+    p->setIndeterminate(false);
+    CHECK(p->dets == 1);
+    p->setIndeterminate(false);
+    CHECK(p->dets == 1);
+}
+TEST(ProgressBar_indeterminate_draws_a_moving_shuttle)
+{
+    auto bar = std::make_shared<ProgressBar>();
+    bar->width.set(100); bar->height.set(8);
+    bar->setIndeterminate(true);
+    bar->setShuttleFraction(0.25);
+    bar->setPeriodMs(1000.0);
+    bar->advance(0.0);
+    bar->advance(500.0);              // phase 0.5
+
+    RecordingTarget t;
+    bar->render(t);
+    CHECK(t.count(K::ClipRect) == 1); // the shuttle is clipped to the track
+    double firstX = 1e18;
+    bool afterClip = false;
+    for (const auto &op : t.ops())
+    {
+        if (op.kind == K::ClipRect) { afterClip = true; continue; }
+        if (afterClip && op.kind == K::MoveTo) { firstX = op.args[0]; break; }
+    }
+    // shuttle x = phase*(w+sw) - sw = 0.5*125 - 25 = 37.5; the rounded path starts one
+    // corner radius in from that left edge.
+    // (drawRoundedRect clamps the radius to half the shorter side: min(25, 8)/2 = 4.)
+    const double r = std::min(Theme::basicTheme().progress.fill.cornerRadius, 4.0);
+    CHECK_NEAR(firstX, 37.5 + r, 1e-6);
+
+    bar->advance(750.0);
+    RecordingTarget t2;
+    bar->render(t2);
+    double secondX = 1e18;
+    afterClip = false;
+    for (const auto &op : t2.ops())
+    {
+        if (op.kind == K::ClipRect) { afterClip = true; continue; }
+        if (afterClip && op.kind == K::MoveTo) { secondX = op.args[0]; break; }
+    }
+    CHECK(secondX > firstX);          // it moved
+    bar->setShuttleFraction(2.0);     // clamped, not out of range
+    RecordingTarget t3;
+    bar->render(t3);
+    CHECK(t3.count(K::ClipRect) == 1);
+}
+
+
+// ───────────────────────── FR-36 signal hooks ─────────────────────────
+TEST(Segment_hover_and_focus_signal_hooks_fire_on_edges)
+{
+    struct HookSeg : Segment
+    {
+        std::vector<bool> hovers, focuses;
+        void onHoverChanged(bool h) override { hovers.push_back(h); }
+        void onFocusChanged(bool f) override { focuses.push_back(f); }
+    };
+    auto a = std::make_shared<HookSeg>();
+    auto b = std::make_shared<HookSeg>();
+    a->focusable = true; b->focusable = true;
+    a->width.set(10); a->height.set(10);
+
+    Segment::setHovered(a.get());
+    a->advance(0.0);
+    CHECK(a->hovers.size() == 1);
+    CHECK(a->hovers[0] == true);
+    a->advance(10.0);                 // no edge: no re-fire
+    CHECK(a->hovers.size() == 1);
+    Segment::setHovered(nullptr);
+    a->advance(20.0);
+    CHECK(a->hovers.size() == 2);
+    CHECK(a->hovers[1] == false);
+
+    a->requestFocus();
+    CHECK(a->focuses.size() == 1);
+    CHECK(a->focuses[0] == true);
+    a->requestFocus();                // already focused: no re-fire
+    CHECK(a->focuses.size() == 1);
+    b->requestFocus();                // steals focus in the same group
+    CHECK(b->focuses.size() == 1);
+    CHECK(a->focuses.size() == 2);
+    CHECK(a->focuses[1] == false);
+    Segment::setHovered(nullptr);
+}
+TEST(Button_signal_hooks_cover_press_release_cancel_and_key)
+{
+    struct HookButton : Button
+    {
+        int downs = 0, releases = 0, cancels = 0, clicks = 0;
+        HookButton() : Button("go") {}
+        void onPressDown() override { ++downs; }
+        void onRelease() override { ++releases; }
+        void onCancel() override { ++cancels; }
+        void onClicked() override { ++clicks; }
+    };
+    auto b = std::make_shared<HookButton>();
+    b->width.set(60); b->height.set(24);
+    int cbClicks = 0;
+    b->onClick = [&] { ++cbClicks; };
+
+    b->onGesture({Gesture::Type::Down, {5, 5}, {0, 0}, PointerButton::Left});
+    CHECK(b->downs == 1);
+    b->onGesture({Gesture::Type::Click, {5, 5}, {0, 0}, PointerButton::Left});
+    CHECK(b->releases == 1);
+    CHECK(b->clicks == 1);
+    CHECK(cbClicks == 1);              // the public callback still fires
+
+    // press then drop elsewhere = cancel, no click
+    b->onGesture({Gesture::Type::Down, {5, 5}, {0, 0}, PointerButton::Left});
+    b->onGesture({Gesture::Type::Drop, {500, 500}, {0, 0}, PointerButton::Left});
+    CHECK(b->cancels == 1);
+    CHECK(b->clicks == 1);
+    b->onGesture({Gesture::Type::Drop, {500, 500}, {0, 0}, PointerButton::Left});
+    CHECK(b->cancels == 1);            // not pressed: no second cancel
+    b->onGesture({Gesture::Type::Up, {5, 5}, {0, 0}, PointerButton::Left});
+
+    b->focusable = true;
+    b->requestFocus();
+    KeyEvent k; k.type = KeyEvent::Type::Down; k.keyCode = 13;
+    CHECK(b->dispatchKey(k));
+    CHECK(b->clicks == 2);             // keyboard confirm is a click
+    CHECK(cbClicks == 2);
+}
+TEST(Checkbox_and_Slider_signal_hooks)
+{
+    struct HookCheck : Checkbox
+    {
+        std::vector<bool> states;
+        void onCheckedChanged(bool c) override { states.push_back(c); }
+    };
+    auto c = std::make_shared<HookCheck>();
+    c->width.set(20); c->height.set(20);
+    c->setChecked(true);                // programmatic: no signal
+    CHECK(c->states.empty());
+    c->onGesture({Gesture::Type::Click, {5, 5}, {0, 0}, PointerButton::Left});
+    CHECK(c->states.size() == 1);
+    CHECK(c->states[0] == false);
+
+    struct HookSlider : Slider
+    {
+        int starts = 0, ends = 0;
+        std::vector<double> values;
+        void onDragStart() override { ++starts; }
+        void onValueChanged(double v) override { values.push_back(v); }
+        void onDragEnd() override { ++ends; }
+    };
+    auto s = std::make_shared<HookSlider>();
+    s->width.set(100); s->height.set(20);
+    int cbCount = 0;
+    s->onChange = [&](double) { ++cbCount; };
+
+    s->onGesture({Gesture::Type::DragStart, {50, 10}, {0, 0}, PointerButton::Left});
+    CHECK(s->starts == 1);
+    CHECK(s->values.size() == 1);
+    s->onGesture({Gesture::Type::Drag, {70, 10}, {0, 0}, PointerButton::Left});
+    CHECK(s->starts == 1);              // one drag-start per drag, not per move
+    CHECK(s->values.size() == 2);
+    s->onGesture({Gesture::Type::Drop, {70, 10}, {0, 0}, PointerButton::Left});
+    CHECK(s->ends == 1);
+    s->onGesture({Gesture::Type::Drop, {70, 10}, {0, 0}, PointerButton::Left});
+    CHECK(s->ends == 1);                // not dragging: no second end
+    CHECK(cbCount == (int)s->values.size());  // hook and callback stay in lockstep
+
+    s->focusable = true;
+    s->requestFocus();
+    KeyEvent k; k.type = KeyEvent::Type::Down; k.keyCode = 37;
+    CHECK(s->dispatchKey(k));
+    CHECK(s->values.size() == 3);
+    k.keyCode = 39;
+    CHECK(s->dispatchKey(k));
+    CHECK(s->values.size() == 4);
+    s->onGesture({Gesture::Type::DoubleClick, {10, 10}, {0, 0}, PointerButton::Left});
+    CHECK(s->values.size() == 5);
+    CHECK(cbCount == (int)s->values.size());
+}
+TEST(Slider_deferred_click_jump_notifies_both_hook_and_callback)
+{
+    struct HookSlider : Slider
+    {
+        std::vector<double> values;
+        void onValueChanged(double v) override { values.push_back(v); }
+    };
+    auto s = std::make_shared<HookSlider>();
+    s->width.set(100); s->height.set(20);
+    int cb = 0;
+    s->onChange = [&](double) { ++cb; };
+    s->onGesture({Gesture::Type::Click, {75, 10}, {0, 0}, PointerButton::Left});
+    CHECK(s->values.empty());          // deferred behind the double-click guard
+    s->advance(0.0);
+    s->advance(400.0);                 // guard elapsed -> commit
+    CHECK(s->values.size() == 1);
+    CHECK(cb == 1);
+}
+
+// ───────────────────────── FR-37 PathSegment ─────────────────────────
+TEST(PathSegment_emits_its_path_in_segment_space)
+{
+    auto seg = std::make_shared<PathSegment>();
+    seg->x.set(30); seg->y.set(40);
+    seg->width.set(20); seg->height.set(20);
+    seg->path.moveTo(0, 0).lineTo(20, 0).lineTo(20, 20).close();
+    seg->path.paint = Paint::stroked(Color::rgba(255, 128, 0), 2.0);
+    CHECK(seg->path.segmentCount() == 4);
+
+    RecordingTarget t;
+    seg->render(t);
+    CHECK(t.count(K::MoveTo) == 1);
+    CHECK(t.count(K::LineTo) == 2);
+    CHECK(t.count(K::ClosePath) == 1);
+    CHECK(t.count(K::StrokePath) == 1);
+    // The path is in LOCAL space; the segment's transform carries the offset.
+    const DrawOp *st = nullptr, *mv = nullptr;
+    for (const auto &op : t.ops())
+    {
+        if (!st && op.kind == K::SetTransform) st = &op;
+        if (!mv && op.kind == K::MoveTo) mv = &op;
+    }
+    CHECK(st != nullptr);
+    CHECK(mv != nullptr);
+    CHECK_NEAR(mv->args[0], 0.0, 1e-12);
+    CHECK_NEAR(st->transform.e, 30.0, 1e-12);
+    CHECK_NEAR(st->transform.f, 40.0, 1e-12);
+
+    seg->clearPath();
+    CHECK(seg->path.segmentCount() == 0);
+    RecordingTarget empty;
+    seg->render(empty);
+    CHECK(empty.count(K::MoveTo) == 0);
+    CHECK(empty.count(K::BeginPath) == 1);  // still opens (and strokes) an empty path
+}
+TEST(PathSegment_participates_in_opacity_and_transform_channels)
+{
+    auto seg = std::make_shared<PathSegment>();
+    seg->width.set(20); seg->height.set(20);
+    seg->path.moveTo(0, 0).lineTo(20, 20);
+    seg->path.paint = Paint::stroked(Color::rgba(0, 0, 0), 1.0);
+    seg->opacity.set(0.5);
+    seg->pivotX.set(10); seg->pivotY.set(10);
+    seg->rotation.set(M_PI);
+
+    RecordingTarget t;
+    seg->render(t);
+    CHECK(t.count(K::PushLayer) == 1);
+    const DrawOp *st = nullptr;
+    for (const auto &op : t.ops())
+        if (op.kind == K::SetTransform) { st = &op; break; }
+    CHECK(st != nullptr);
+    CHECK_NEAR(st->transform.a, -1.0, 1e-9);   // rotated 180 deg about its own centre
+    CHECK_NEAR(st->transform.e, 20.0, 1e-9);
+}
+TEST(Path_drawable_still_renders_through_emit)
+{
+    Path p;
+    p.moveTo(0, 0).quadTo(5, 5, 10, 0).cubicTo(1, 2, 3, 4, 5, 6).close();
+    p.paint = Paint::filled(Color::rgba(10, 20, 30));
+    RecordingTarget t;
+    p.render(t);
+    CHECK(t.count(K::QuadTo) == 1);
+    CHECK(t.count(K::CubicTo) == 1);
+    CHECK(t.count(K::FillPath) == 1);
+    p.clear();
+    CHECK(p.segmentCount() == 0);
+}
+
 // ───────────────────────── widgets ─────────────────────────
 TEST(Knob_drag_keys_and_render)
 {

@@ -24,6 +24,14 @@ namespace artboard
         void advance(double nowMs) override;
 
     protected:
+        // ---- signal hooks (FR-36) ----
+        // The authoring seam: a subclass overrides these to drive its own motion. They fire
+        // alongside (not instead of) the public `onClick` callback a caller subscribes to.
+        virtual void onPressDown() {}
+        virtual void onRelease() {}   // press completed into a click
+        virtual void onCancel() {}    // press abandoned (dragged off / dropped elsewhere)
+        virtual void onClicked() {}   // the button fired (pointer or keyboard)
+
         bool handleGesture(const Gesture &g, const Point &localPoint) override;
         bool handleKey(const KeyEvent &event) override;
 

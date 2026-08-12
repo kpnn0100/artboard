@@ -36,6 +36,7 @@ namespace artboard
         {
             mPressed = true;
             mPress.animateTo(1.0, 90.0, Easing::EaseOutCubic, mNowMs);
+            onPressDown();
             return true;
         }
         if (g.type == Gesture::Type::Up)
@@ -47,14 +48,22 @@ namespace artboard
             const bool invoke = mPressed;
             mPressed = false;
             mPress.animateTo(0.0, 150.0, Easing::EaseOutCubic, mNowMs);
-            if (invoke && onClick)
-                onClick();
+            if (invoke)
+            {
+                onRelease();
+                onClicked();
+                if (onClick)
+                    onClick();
+            }
             return true;
         }
         if (g.type == Gesture::Type::Drop)
         {
+            const bool wasPressed = mPressed;
             mPressed = false;
             mPress.animateTo(0.0, 150.0, Easing::EaseOutCubic, mNowMs);
+            if (wasPressed)
+                onCancel();
             return true;
         }
         return Segment::handleGesture(g, localPoint);
@@ -64,6 +73,7 @@ namespace artboard
     {
         if (isConfirmKey(event))
         {
+            onClicked();  // FR-36: keyboard confirm is a click too
             if (onClick)
                 onClick();
             return true;

@@ -1,31 +1,31 @@
 /*
- *  Arstro Artboard — ProgressBar: non-interactive [0,1] bar / level meter.
+ *  Arstro Artboard — ProgressBar: the bar/level-meter *look* of a ProgressIndicator.
+ *
+ *  All progress state (clamped value, spring-smoothed display level, indeterminate
+ *  phase, the four signals) lives in the ProgressIndicator base (FR-35); this class only
+ *  paints. In indeterminate mode it sweeps a shuttle segment across the track instead of
+ *  filling from the left, so "unknown progress" never reads as "no progress".
  */
 #pragma once
-#include "../base/Segment.h"
+#include "../base/ProgressIndicator.h"
 #include "../base/Theme.h"
-#include "../../anim/Spring.h"
 
 namespace artboard
 {
-    class ProgressBar : public Segment
+    class ProgressBar : public ProgressIndicator
     {
     public:
         explicit ProgressBar(const ProgressStyle &style = Theme::basicTheme().progress);
 
-        double value() const { return mValue; }
-        void setValue(double v); // clamped to [0,1]; the shown level eases toward it
         void setStyle(const ProgressStyle &style) { mStyle = style; }
-        void advance(double nowMs) override;
+        /** Width of the indeterminate shuttle as a fraction of the track (default 0.3). */
+        void setShuttleFraction(double f) { mShuttle = f; }
 
     protected:
         void onPaint(IRenderTarget &t) const override;
-        bool hitTestSelf(const Point &) const override { return false; } // input passes through
 
     private:
         ProgressStyle mStyle;
-        double mValue = 0.0;
-        double mLastMs = -1.0;
-        Spring mDisplay{0.0};  // shown level, eases toward mValue (no snapping)
+        double mShuttle = 0.3;
     };
 }

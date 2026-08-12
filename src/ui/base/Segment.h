@@ -106,6 +106,12 @@ namespace artboard
         virtual void onPaint(IRenderTarget &t) const {}
         /** Drawn in the overlay pass (on top of everything, unclipped). Default none. */
         virtual void onOverlay(IRenderTarget &t) const {}
+        /** Signal hooks (FR-36): overridable notifications a subclass reacts to, on top of
+         *  the std::function callbacks a *caller* subscribes to. These are the authoring
+         *  seam — a generated or hand-written subclass starts its animations here. */
+        virtual void onHoverChanged(bool hovered) { (void)hovered; }
+        virtual void onFocusChanged(bool focused) { (void)focused; }
+
         virtual bool hitTestSelf(const Point &localPoint) const;
         virtual bool handleGesture(const Gesture &g, const Point &localPoint);
         virtual bool handleKey(const KeyEvent &event);
@@ -115,7 +121,9 @@ namespace artboard
         void renderOverlayContent(IRenderTarget &t, const Transform &parent) const;
         Segment *topmostChildAt(const Point &worldPoint) const;
         bool dispatchGesture(const Gesture &g);
-        void clearFocusRegistration();
+        /** Drop this segment from the focus registry. `notify` fires onFocusChanged(false);
+         *  the destructor passes false — a dying object gets no signals. */
+        void clearFocusRegistration(bool notify = true);
         void updateHoverAnim(double nowMs);
         static bool isHorizontal(SnapEdge e);
         double edgeInset(SnapEdge e) const;
