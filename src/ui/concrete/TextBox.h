@@ -47,6 +47,7 @@ namespace artboard
 
         TextBoxStyle mStyle;
         int mCaret_ = 0;
+        mutable double mScrollX = 0.0;   // horizontal text offset that keeps the caret visible (FR-39)
         mutable IRenderTarget *mMeasure = nullptr;  // last target seen, for accurate caret placement
         double mNowMs = 0.0;
         bool mFocusPrev = false;

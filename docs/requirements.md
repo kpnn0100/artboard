@@ -672,6 +672,29 @@ expression, a name) can be corrected rather than only retyped from the end:
 `readOnly` shall continue to reject every mutation while still allowing focus and caret
 movement, so a value can be read and inspected without being changed.
 
+### FR-39 Control text fits its box
+
+No control shall draw text outside its own bounds.
+
+- `TextBox` shall clip its content to its bounds and **scroll horizontally to keep the caret
+  visible**: when the caret would fall outside the padded field, the text offset shifts by
+  the minimum amount that brings it back inside. A value longer than the field therefore
+  stays fully editable instead of spilling into whatever is drawn beside it.
+- `ComboBox` shall shorten its selected-option label with a trailing ellipsis when the label
+  does not fit between the field's left padding and its caret triangle, measured with
+  `IRenderTarget::measureText` (FR-22).
+
+Both fit against the target's own metrics, so a label that fits on one adapter is not
+clipped on another.
+
+### FR-40 Disabled state rendering
+
+`Segment` shall expose an animated `disabledAmount()` in `[0,1]` that eases whenever
+`enabled` changes (reduced-motion safe, like `hoverAmount()`), and every themed control
+shall dim its drawn colours by it — a disabled control must LOOK unavailable, not merely
+ignore input. A control that renders identically enabled and disabled is an unfinished
+state, not a styling preference.
+
 ## 4. Non-functional Requirements
 
 ### NFR-1 Platform independence

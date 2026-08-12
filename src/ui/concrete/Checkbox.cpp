@@ -73,14 +73,15 @@ namespace artboard
 
         const double side = height.value();
         // Hover: brighten the box and pull its border toward the accent (indicator fill).
-        mBox->style = hoverBox(mStyle.box, mStyle.indicator.paint.fill, hoverAmount());
+        const double dim = disabledAmount();
+        mBox->style = dimBox(hoverBox(mStyle.box, mStyle.indicator.paint.fill, hoverAmount()), dim);
         mBox->width.set(side);
         mBox->height.set(side);
 
         // The check indicator grows in/out from the centre (it never pops).
         const double c = mCheck.value();
         const double isz = (side - 10.0) * c;
-        mIndicator->style = mStyle.indicator;
+        mIndicator->style = dimBox(mStyle.indicator, dim);
         mIndicator->visible = c > 0.001;
         mIndicator->x.set((side - isz) * 0.5);
         mIndicator->y.set((side - isz) * 0.5);
@@ -89,6 +90,7 @@ namespace artboard
 
         mLabel->text = text;
         mLabel->style = mStyle.label;
+        mLabel->style.color = dimColor(mLabel->style.color, dim);
         mLabel->x.set(side + 10.0);
         mLabel->y.set((height.value() - mStyle.label.sizePx) * 0.5 - 2.0);
     }

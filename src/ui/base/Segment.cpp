@@ -61,6 +61,17 @@ namespace artboard
         mHoverAmount.update(nowMs);
     }
 
+    void Segment::updateDisabledAnim(double nowMs)
+    {
+        if (enabled != mEnabledPrev)  // FR-40: ease the dim in/out (reduced-motion safe)
+        {
+            mEnabledPrev = enabled;
+            mDisabledAmount.animateTo(enabled ? 0.0 : 1.0, interaction::kHoverMs,
+                                      Easing::EaseOutCubic, nowMs);
+        }
+        mDisabledAmount.update(nowMs);
+    }
+
     void Segment::render(IRenderTarget &t, const Transform &parent) const
     {
         // FR-32: fade the whole subtree as ONE group. Fully transparent draws nothing at all;
@@ -217,6 +228,7 @@ namespace artboard
     void Segment::advance(double nowMs)
     {
         updateHoverAnim(nowMs);
+        updateDisabledAnim(nowMs);   // FR-40
         x.update(nowMs);
         y.update(nowMs);
         width.update(nowMs);

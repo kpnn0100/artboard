@@ -17,6 +17,7 @@ namespace artboard
         constexpr double kHoverMs = 120.0;       // hover fade in/out (short, per §2A)
         constexpr double kHoverFillLift = 0.14;  // brighten fill toward white at full hover
         constexpr double kHoverStrokeLift = 0.5; // pull border toward the emphasis colour
+        constexpr double kDisabledFade = 0.55;   // alpha removed at full disable (FR-40)
     }
 
     /** Linear interpolate two colours componentwise (t in [0,1]). */
@@ -56,6 +57,28 @@ namespace artboard
     {
         return BoxStyle{lerpPaint(a.paint, b.paint, t),
                         a.cornerRadius + (b.cornerRadius - a.cornerRadius) * t};
+    }
+
+    /** Standard disabled treatment (FR-40): drop `t` of the colour's alpha, so a disabled
+     *  control reads as unavailable on any surface without inventing a per-control grey. */
+    inline Color dimColor(const Color &c, double t)
+    {
+        Color out = c;
+        out.a *= 1.0 - interaction::kDisabledFade * t;
+        return out;
+    }
+
+    inline Paint dimPaint(const Paint &p, double t)
+    {
+        Paint out = p;
+        if (out.hasFill) out.fill = dimColor(out.fill, t);
+        if (out.hasStroke) out.stroke = dimColor(out.stroke, t);
+        return out;
+    }
+
+    inline BoxStyle dimBox(const BoxStyle &b, double t)
+    {
+        return BoxStyle{dimPaint(b.paint, t), b.cornerRadius};
     }
 
     /** Standard hover appearance for a box, scaled by `t` (the control's hoverAmount):

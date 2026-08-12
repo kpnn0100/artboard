@@ -104,13 +104,16 @@ namespace artboard
     {
         const double w = width.value(), h = height.value();
         // Hover: brighten the field, pull its border toward the accent (caret colour).
-        const BoxStyle field = hoverBox(mStyle.field, mStyle.caretColor, hoverAmount());
+        const double dim = disabledAmount();
+        const BoxStyle field = dimBox(hoverBox(mStyle.field, mStyle.caretColor, hoverAmount()), dim);
         drawRoundedRect(t, Rect{0, 0, w, h}, field.cornerRadius, field.paint);
 
-        t.setFill(mStyle.text.color);
-        const std::string &sel = mOptions.empty() ? std::string() : mOptions[mSelected];
-        t.drawText(sel, 10.0, h * 0.5 + mStyle.text.sizePx * 0.35, mStyle.text.sizePx,
-                   mStyle.text.fontFamily, mStyle.text.letterSpacingPx);
+        t.setFill(dimColor(mStyle.text.color, dim));
+        const std::string sel = mOptions.empty() ? std::string() : mOptions[mSelected];
+        // FR-39: shorten to fit between the left padding and the caret triangle, measured
+        // with the adapter's own metrics — a long option name never runs under the caret.
+        t.drawText(fitText(t, sel, w - 10.0 - 22.0), 10.0, h * 0.5 + mStyle.text.sizePx * 0.35,
+                   mStyle.text.sizePx, mStyle.text.fontFamily, mStyle.text.letterSpacingPx);
 
         // caret triangle
         t.beginPath();
@@ -118,8 +121,33 @@ namespace artboard
         t.lineTo(w - 10.0, h * 0.5 - 3.0);
         t.lineTo(w - 14.0, h * 0.5 + 3.0);
         t.closePath();
-        t.setFill(mStyle.caretColor);
+        t.setFill(dimColor(mStyle.caretColor, dim));
         t.fillPath();
+    }
+
+    std::string ComboBox::fitText(IRenderTarget &t, const std::string &s, double maxW) const
+    {
+        auto width = [&](const std::string &v) {
+            return t.measureText(v, mStyle.text.sizePx, mStyle.text.fontFamily,
+                                 mStyle.text.letterSpacingPx);
+        };
+        if (maxW <= 0.0)
+            return std::string();   // no room at all: draw nothing rather than overflow
+        if (width(s) <= maxW)
+            return s;
+        const std::string dots = "\u2026";
+        if (width(dots) > maxW)
+            return std::string();
+        std::string cut = s;
+        while (!cut.empty())
+        {
+            do
+                cut.pop_back();
+            while (!cut.empty() && ((unsigned char)cut.back() & 0xC0) == 0x80);  // whole codepoints
+            if (width(cut + dots) <= maxW)
+                return cut + dots;
+        }
+        return dots;
     }
 
     void ComboBox::onOverlay(IRenderTarget &t) const

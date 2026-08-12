@@ -37,6 +37,8 @@ namespace artboard
         bool handleGesture(const Gesture &g, const Point &localPoint) override;
 
     private:
+        /** `s`, or the longest prefix plus an ellipsis that fits `maxW` (FR-39). */
+        std::string fitText(IRenderTarget &t, const std::string &s, double maxW) const;
         void setOpen(bool open); // flip logical state + start the reveal/close animation
         ComboStyle mStyle;
         std::vector<std::string> mOptions;

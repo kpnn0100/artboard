@@ -299,6 +299,23 @@ metrics instead of the estimate).
 - `syncVisuals` draws the caret at `padding + textWidthTo(mCaret_)` rather than at the end
   of the string; it still fades with the focus factor.
 
+## 2l. Text fitting and disabled state (FR-39, FR-40)
+
+- `TextBox` sets `clipToBounds` in its constructor (the backstop) and keeps a `mScrollX`
+  text offset. `syncVisuals` computes `caretX = textWidthTo(mCaret_)` and shifts `mScrollX`
+  by the MINIMUM amount that brings the caret back inside `[0, width - 2*padding]`, then
+  clamps it to `[0, fullWidth - visible]` so the field never scrolls past the end of the
+  text. The label draws at `padding - mScrollX` and the caret at `padding + caretX -
+  mScrollX`, so both stay in one coordinate frame.
+- `ComboBox::fitText` shortens the selected label to the space between the left padding and
+  the caret triangle, trimming whole UTF-8 codepoints and appending an ellipsis; zero or
+  negative space draws nothing rather than overflowing.
+- `Segment::updateDisabledAnim` mirrors `updateHoverAnim`: it eases `mDisabledAmount` on
+  every `enabled` edge, so `disabledAmount()` is a smooth `[0,1]` factor. `Interaction.h`
+  gains `dimColor`/`dimPaint`/`dimBox`, which drop `kDisabledFade` of a colour's alpha; every
+  themed control multiplies its own style through them. One mechanism, so a disabled Button
+  and a disabled Slider read the same on any theme.
+
 ## 3. `InputController`
 
 `InputController` is an abstract behavior strategy.

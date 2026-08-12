@@ -104,7 +104,8 @@ namespace artboard
         // factors are non-overshooting EaseOutCubic values in [0,1], so blend stays in [0,1].
         const double press = mPress.value();
         const double blend = press + (1.0 - press) * 0.4 * hoverAmount();
-        mBody->style = lerpBox(mStyle.idle, mStyle.pressed, blend);
+        const double dim = disabledAmount();
+        mBody->style = dimBox(lerpBox(mStyle.idle, mStyle.pressed, blend), dim);
         mBody->x.set(0.0);
         mBody->y.set(0.0);
         mBody->width.set(width.value());
@@ -112,6 +113,7 @@ namespace artboard
 
         mLabel->text = text;
         mLabel->style = mStyle.label;
+        mLabel->style.color = dimColor(mLabel->style.color, dim);
         mLabel->x.set(10.0);
         mLabel->y.set((height.value() - mStyle.label.sizePx) * 0.5 - 2.0);
     }

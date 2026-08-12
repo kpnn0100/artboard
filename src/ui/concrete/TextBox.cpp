@@ -8,6 +8,7 @@ namespace artboard
         : mStyle(style)
     {
         focusable = true;
+        clipToBounds = true;   // FR-39: the value can never spill past the field
         width.set(180.0);
         height.set(34.0);
     }
@@ -170,24 +171,38 @@ namespace artboard
         ensureVisualTree();
 
         const double padding = 10.0;
+        const double dim = disabledAmount();
         // Blend idle<->focused by the animated focus factor, then hover brightens/pulls the
         // border toward the accent (caret colour). Neither the border nor caret pops.
         const double fa = mFocusAmt.value();
-        mBox->style = hoverBox(lerpBox(mStyle.idle, mStyle.focused, fa), mStyle.caretColor, hoverAmount());
+        mBox->style = dimBox(hoverBox(lerpBox(mStyle.idle, mStyle.focused, fa), mStyle.caretColor,
+                                      hoverAmount()), dim);
         mBox->width.set(width.value());
         mBox->height.set(height.value());
 
         mLabel->text = text.empty() ? placeholder : text;
         mLabel->style = text.empty() ? mStyle.placeholder : mStyle.text;
-        mLabel->x.set(padding);
+        mLabel->style.color = dimColor(mLabel->style.color, dim);
+
+        // FR-39: scroll the text so the caret is always inside the padded field, by the
+        // smallest shift that achieves it. A value longer than the box stays editable
+        // instead of spilling past it (the box also clips, as a backstop).
+        const double visible = std::max(0.0, width.value() - padding * 2.0);
+        const double caretX = textWidthTo(mCaret_);
+        if (caretX - mScrollX > visible) mScrollX = caretX - visible;
+        if (caretX - mScrollX < 0.0) mScrollX = caretX;
+        const double fullW = textWidthTo((int)text.size());
+        mScrollX = std::max(0.0, std::min(mScrollX, std::max(0.0, fullW - visible)));
+
+        mLabel->x.set(padding - mScrollX);
         mLabel->y.set((height.value() - mLabel->style.sizePx) * 0.5 - 2.0);
 
-        Color caret = mStyle.caretColor;
+        Color caret = dimColor(mStyle.caretColor, dim);
         caret.a *= fa;  // caret fades in with focus, out on blur
         mCaret->style = {Paint::filled(caret), 0.0};
         mCaret->visible = fa > 0.01;
-        // Drawn AT the caret position, not always at the end (FR-38).
-        mCaret->x.set(padding + textWidthTo(mCaret_));
+        // Drawn AT the caret position, not always at the end (FR-38), in the scrolled frame.
+        mCaret->x.set(padding + caretX - mScrollX);
         mCaret->y.set(8.0);
         mCaret->width.set(2.0);
         mCaret->height.set(height.value() - 16.0);

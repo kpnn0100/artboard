@@ -208,7 +208,8 @@ namespace artboard
         mTrack->visible = !mHasGradient;
         mRangeFill->visible = !mHasGradient;
 
-        mTrack->style = mStyle.track;
+        const double dim = disabledAmount();
+        mTrack->style = dimBox(mStyle.track, dim);
         mTrack->x.set(0.0);
         mTrack->y.set(trackY);
         mTrack->width.set(width.value());
@@ -227,7 +228,7 @@ namespace artboard
         const double fillLo = fillFrom < normalized ? fillFrom : normalized;
         const double fillHi = fillFrom < normalized ? normalized : fillFrom;
 
-        mRangeFill->style = mStyle.rangeFill;
+        mRangeFill->style = dimBox(mStyle.rangeFill, dim);
         mRangeFill->x.set(width.value() * fillLo);
         mRangeFill->y.set(trackY);
         mRangeFill->width.set(width.value() * (fillHi - fillLo));
@@ -259,7 +260,7 @@ namespace artboard
             mSubTick->height.set(tickH);
         }
 
-        mThumb->style = hoverBox(mStyle.thumb, mStyle.rangeFill.paint.fill, hv);
+        mThumb->style = dimBox(hoverBox(mStyle.thumb, mStyle.rangeFill.paint.fill, hv), dim);
         mThumb->x.set(thumbCenter - thumbDiameter * 0.5);
         mThumb->y.set((height.value() - thumbDiameter) * 0.5);
         mThumb->width.set(thumbDiameter);

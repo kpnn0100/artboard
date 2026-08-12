@@ -94,6 +94,11 @@ namespace artboard
         bool isHovered() const { return mHovered; }
         /** Animated hover factor in [0,1]; controls scale their hover look by it. */
         double hoverAmount() const { return mHoverAmount.value(); }
+        // ---- disabled state (FR-40) ----
+        /** Animated disabled factor in [0,1]; controls dim their look by it, so switching
+         *  `enabled` fades rather than flipping. */
+        double disabledAmount() const { return mDisabledAmount.value(); }
+
         /** True if this segment OR any descendant is the current hover owner — for
          *  containers (e.g. ScrollView) that react to hover over their content. */
         bool isHoverWithin() const;
@@ -125,6 +130,7 @@ namespace artboard
          *  the destructor passes false — a dying object gets no signals. */
         void clearFocusRegistration(bool notify = true);
         void updateHoverAnim(double nowMs);
+        void updateDisabledAnim(double nowMs);
         static bool isHorizontal(SnapEdge e);
         double edgeInset(SnapEdge e) const;
         void resolveSnap();
@@ -133,6 +139,8 @@ namespace artboard
         bool mHovered = false;
         bool mHoverPrev = false;
         Property mHoverAmount{0.0};
+        bool mEnabledPrev = true;
+        Property mDisabledAmount{0.0};
         Segment *mSnapTarget = nullptr;
         SnapEdge mSnapMine = SnapEdge::Left;
         SnapEdge mSnapTheirs = SnapEdge::Right;

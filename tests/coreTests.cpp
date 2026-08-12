@@ -2206,6 +2206,171 @@ TEST(TextBox_press_places_the_caret_and_the_caret_is_drawn_there)
     CHECK(caretX < 10.0 + 7.0 * 6.0);   // strictly left of where the end-of-text caret would sit
 }
 
+
+// ───────────────────────── FR-39 text fits its box ─────────────────────────
+TEST(TextBox_clips_and_scrolls_to_keep_the_caret_visible)
+{
+    auto tb = std::make_shared<TextBox>();
+    tb->width.set(80); tb->height.set(28);
+    tb->focusable = true;
+    tb->requestFocus();
+    CHECK(tb->clipToBounds);                     // the value can never spill past the field
+
+    tb->text = "min(w, h) * 0.5 + something";    // far wider than 80px
+    tb->caretToEnd();
+    RecordingTarget t;
+    tb->render(t);
+    CHECK(t.count(K::ClipRect) == 1);            // the field clips its content
+
+    // With the caret at the end, the label is pushed LEFT of the padding so the caret is
+    // inside the field; with the caret at the start it sits back at the padding.
+    auto labelX = [](const RecordingTarget &rt) {
+        double last = 0;
+        for (const auto &op : rt.ops())
+            if (op.kind == K::SetTransform) last = op.transform.e;
+        return last;
+    };
+    RecordingTarget atEnd;
+    tb->render(atEnd);
+    tb->setCaret(0);
+    RecordingTarget atStart;
+    tb->render(atStart);
+    CHECK(labelX(atEnd) < labelX(atStart));      // it scrolled to follow the caret
+
+    tb->text = "ab";                              // short again: no scroll
+    tb->caretToEnd();
+    RecordingTarget shortText;
+    tb->render(shortText);
+    bool sawPaddingOrigin = false;
+    for (const auto &op : shortText.ops())
+        if (op.kind == K::SetTransform && std::fabs(op.transform.e - 10.0) < 1e-9)
+            sawPaddingOrigin = true;
+    CHECK(sawPaddingOrigin);
+}
+TEST(ComboBox_ellipsizes_a_label_that_does_not_fit)
+{
+    auto cb = std::make_shared<ComboBox>();
+    cb->width.set(70); cb->height.set(24);
+    cb->setOptions({"EaseInOutElastic", "Linear"});
+    cb->setSelectedIndex(0);
+
+    RecordingTarget t;
+    cb->render(t);
+    std::string drawn;
+    for (const auto &op : t.ops())
+        if (op.kind == K::DrawText) drawn = op.text;
+    CHECK(!drawn.empty());
+    CHECK(drawn != "EaseInOutElastic");                       // it was shortened
+    CHECK(drawn.size() >= 3);
+    CHECK(drawn.compare(drawn.size() - 3, 3, "\xe2\x80\xa6") == 0);  // ends with an ellipsis
+
+    cb->width.set(140);
+    cb->setSelectedIndex(1);                                   // a label that fits is untouched
+    RecordingTarget fits;
+    cb->render(fits);
+    for (const auto &op : fits.ops())
+        if (op.kind == K::DrawText) drawn = op.text;
+    CHECK(drawn == "Linear");
+
+    cb->width.set(4);                                          // no room even for the ellipsis
+    cb->setSelectedIndex(0);
+    RecordingTarget tiny;
+    cb->render(tiny);
+    for (const auto &op : tiny.ops())
+        if (op.kind == K::DrawText) drawn = op.text;
+    CHECK(drawn.empty());
+}
+
+// ───────────────────────── FR-40 disabled state ─────────────────────────
+TEST(Segment_disabled_amount_eases_both_ways)
+{
+    auto seg = std::make_shared<Segment>();
+    seg->advance(0.0);
+    CHECK_NEAR(seg->disabledAmount(), 0.0, 1e-9);
+    seg->enabled = false;
+    seg->advance(0.0);
+    seg->advance(60.0);
+    CHECK(seg->disabledAmount() > 0.0);
+    CHECK(seg->disabledAmount() < 1.0);       // interpolating, not flipping
+    seg->advance(400.0);
+    CHECK_NEAR(seg->disabledAmount(), 1.0, 1e-9);
+    seg->enabled = true;
+    seg->advance(400.0);
+    seg->advance(800.0);
+    CHECK_NEAR(seg->disabledAmount(), 0.0, 1e-9);
+}
+TEST(Controls_look_unavailable_when_disabled)
+{
+    // A disabled control must LOOK unavailable, not merely ignore input.
+    auto alphaOfFirstFill = [](const RecordingTarget &rt) {
+        for (const auto &op : rt.ops())
+            if (op.kind == K::SetFill) return op.color.a;
+        return -1.0;
+    };
+    {
+        auto b = std::make_shared<Button>("Go");
+        b->width.set(80); b->height.set(26);
+        b->advance(0.0);
+        RecordingTarget on;
+        b->render(on);
+        b->enabled = false;
+        for (int i = 0; i <= 20; ++i) b->advance(i * 20.0);
+        RecordingTarget off;
+        b->render(off);
+        CHECK(alphaOfFirstFill(off) < alphaOfFirstFill(on));
+    }
+    {
+        auto c = std::make_shared<Checkbox>("On");
+        c->width.set(80); c->height.set(18);
+        c->advance(0.0);
+        RecordingTarget on;
+        c->render(on);
+        c->enabled = false;
+        for (int i = 0; i <= 20; ++i) c->advance(i * 20.0);
+        RecordingTarget off;
+        c->render(off);
+        CHECK(alphaOfFirstFill(off) < alphaOfFirstFill(on));
+    }
+    {
+        auto s = std::make_shared<Slider>();
+        s->width.set(100); s->height.set(20);
+        s->advance(0.0);
+        RecordingTarget on;
+        s->render(on);
+        s->enabled = false;
+        for (int i = 0; i <= 20; ++i) s->advance(i * 20.0);
+        RecordingTarget off;
+        s->render(off);
+        CHECK(alphaOfFirstFill(off) < alphaOfFirstFill(on));
+    }
+    {
+        auto cb = std::make_shared<ComboBox>();
+        cb->width.set(100); cb->height.set(24);
+        cb->setOptions({"one"});
+        cb->advance(0.0);
+        RecordingTarget on;
+        cb->render(on);
+        cb->enabled = false;
+        for (int i = 0; i <= 20; ++i) cb->advance(i * 20.0);
+        RecordingTarget off;
+        cb->render(off);
+        CHECK(alphaOfFirstFill(off) < alphaOfFirstFill(on));
+    }
+    {
+        auto tb = std::make_shared<TextBox>();
+        tb->width.set(100); tb->height.set(24);
+        tb->text = "v";
+        tb->advance(0.0);
+        RecordingTarget on;
+        tb->render(on);
+        tb->enabled = false;
+        for (int i = 0; i <= 20; ++i) tb->advance(i * 20.0);
+        RecordingTarget off;
+        tb->render(off);
+        CHECK(alphaOfFirstFill(off) < alphaOfFirstFill(on));
+    }
+}
+
 // ───────────────────────── widgets ─────────────────────────
 TEST(Knob_drag_keys_and_render)
 {
