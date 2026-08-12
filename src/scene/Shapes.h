@@ -62,7 +62,7 @@ namespace artboard
         double cornerRadius = 0.0;
         Paint paint;
         Rectangle() = default;
-        Rectangle(const Rect &r, const Paint &p, double radius = 0.0) : rect(r), paint(p), cornerRadius(radius) {}
+        Rectangle(const Rect &r, const Paint &p, double radius = 0.0) : rect(r), cornerRadius(radius), paint(p) {}
 
     protected:
         void onDraw(IRenderTarget &t) const override;
