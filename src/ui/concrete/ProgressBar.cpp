@@ -10,6 +10,8 @@ namespace artboard
 
     void ProgressBar::onPaint(IRenderTarget &t) const
     {
+        if (!drawsBuiltInVisuals)   // FR-41: the subclass draws its own appearance
+            return;
         const double w = width.value(), h = height.value();
         drawRoundedRect(t, Rect{0, 0, w, h}, mStyle.track.cornerRadius, mStyle.track.paint);
 

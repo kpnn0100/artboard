@@ -2371,6 +2371,95 @@ TEST(Controls_look_unavailable_when_disabled)
     }
 }
 
+
+// ───────────────────────── FR-41 suppressing built-in appearance ─────────────────────────
+TEST(Controls_contribute_no_appearance_when_built_in_visuals_are_off)
+{
+    // A subclass that draws its own picture must be able to keep the BEHAVIOUR without the
+    // default appearance showing through underneath it.
+    auto drawsNothing = [](Segment &s) {
+        s.advance(0.0);
+        RecordingTarget t;
+        s.render(t);
+        for (const auto &op : t.ops())
+            if (op.kind == K::FillPath || op.kind == K::StrokePath || op.kind == K::DrawText)
+                return false;
+        return true;
+    };
+
+    auto button = std::make_shared<Button>("Go");
+    button->width.set(80); button->height.set(26);
+    CHECK(!drawsNothing(*button));
+    button->drawsBuiltInVisuals = false;
+    CHECK(drawsNothing(*button));
+
+    auto check = std::make_shared<Checkbox>("On");
+    check->width.set(80); check->height.set(18);
+    check->setChecked(true);
+    CHECK(!drawsNothing(*check));
+    check->drawsBuiltInVisuals = false;
+    CHECK(drawsNothing(*check));
+
+    auto slider = std::make_shared<Slider>();
+    slider->width.set(100); slider->height.set(20);
+    CHECK(!drawsNothing(*slider));
+    slider->drawsBuiltInVisuals = false;
+    CHECK(drawsNothing(*slider));
+
+    auto box = std::make_shared<TextBox>();
+    box->width.set(100); box->height.set(24);
+    box->text = "v";
+    CHECK(!drawsNothing(*box));
+    box->drawsBuiltInVisuals = false;
+    CHECK(drawsNothing(*box));
+
+    auto toggle = std::make_shared<ToggleSwitch>();
+    toggle->width.set(40); toggle->height.set(20);
+    CHECK(!drawsNothing(*toggle));
+    toggle->drawsBuiltInVisuals = false;
+    CHECK(drawsNothing(*toggle));
+
+    auto combo = std::make_shared<ComboBox>();
+    combo->width.set(100); combo->height.set(24);
+    combo->setOptions({"one"});
+    CHECK(!drawsNothing(*combo));
+    combo->drawsBuiltInVisuals = false;
+    CHECK(drawsNothing(*combo));
+
+    auto bar = std::make_shared<ProgressBar>();
+    bar->width.set(100); bar->height.set(8);
+    bar->setValue(0.5);
+    CHECK(!drawsNothing(*bar));
+    bar->drawsBuiltInVisuals = false;
+    CHECK(drawsNothing(*bar));
+}
+TEST(Suppressing_visuals_leaves_behaviour_intact)
+{
+    // Appearance and behaviour are separate concerns: turning the picture off must not turn
+    // the control off.
+    auto b = std::make_shared<Button>("Go");
+    b->width.set(80); b->height.set(26);
+    b->drawsBuiltInVisuals = false;
+    int clicks = 0;
+    b->onClick = [&] { ++clicks; };
+    b->onGesture({Gesture::Type::Down, {10, 10}, {0, 0}, PointerButton::Left});
+    b->onGesture({Gesture::Type::Click, {10, 10}, {0, 0}, PointerButton::Left});
+    CHECK(clicks == 1);
+    CHECK(b->hitTest(Point{10, 10}));
+
+    auto s = std::make_shared<Slider>();
+    s->width.set(100); s->height.set(20);
+    s->drawsBuiltInVisuals = false;
+    s->onGesture({Gesture::Type::DragStart, {50, 10}, {0, 0}, PointerButton::Left});
+    CHECK_NEAR(s->value(), 0.5, 1e-6);
+
+    auto c = std::make_shared<Checkbox>();
+    c->width.set(20); c->height.set(20);
+    c->drawsBuiltInVisuals = false;
+    c->onGesture({Gesture::Type::Click, {10, 10}, {0, 0}, PointerButton::Left});
+    CHECK(c->checked());
+}
+
 // ───────────────────────── widgets ─────────────────────────
 TEST(Knob_drag_keys_and_render)
 {

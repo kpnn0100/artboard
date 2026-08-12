@@ -316,6 +316,16 @@ metrics instead of the estimate).
   themed control multiplies its own style through them. One mechanism, so a disabled Button
   and a disabled Slider read the same on any theme.
 
+## 2m. `drawsBuiltInVisuals` (FR-41)
+
+A `Segment` flag, default true. Controls composed from child visual nodes (`Button`,
+`Checkbox`, `Slider`, `TextBox`) set those children's `visible` from it at the top of
+`syncVisuals` and return early; self-drawn controls (`ToggleSwitch`, `ComboBox`,
+`ProgressBar`, `LineGraph`, and `Slider`'s gradient track) return early from `onPaint`.
+Nothing on the behaviour paths reads it, so hit testing, gestures, value/press/check state
+and the FR-36 signals are untouched — which is exactly the separation that lets a generated
+subclass keep a control's behaviour and supply its own picture.
+
 ## 3. `InputController`
 
 `InputController` is an abstract behavior strategy.

@@ -98,6 +98,12 @@ namespace artboard
     void Button::syncVisuals() const
     {
         ensureVisualTree();
+        // FR-41: a subclass that draws its own appearance keeps the behaviour without the
+        // default picture showing through underneath it.
+        mBody->visible = drawsBuiltInVisuals;
+        mLabel->visible = drawsBuiltInVisuals;
+        if (!drawsBuiltInVisuals)
+            return;
 
         // Crossfade idle<->pressed by the animated press factor; hover nudges the body
         // partway toward the pressed (accent) look — both eased, so nothing snaps. Both

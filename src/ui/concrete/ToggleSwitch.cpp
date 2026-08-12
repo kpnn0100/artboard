@@ -33,6 +33,8 @@ namespace artboard
 
     void ToggleSwitch::onPaint(IRenderTarget &t) const
     {
+        if (!drawsBuiltInVisuals)   // FR-41: the subclass draws its own appearance
+            return;
         const double w = width.value(), h = height.value();
         const double t01 = mThumb.value();
         const double hv = hoverAmount();

@@ -169,6 +169,11 @@ namespace artboard
     void TextBox::syncVisuals() const
     {
         ensureVisualTree();
+        mBox->visible = drawsBuiltInVisuals;   // FR-41
+        mLabel->visible = drawsBuiltInVisuals;
+        mCaret->visible = drawsBuiltInVisuals;
+        if (!drawsBuiltInVisuals)
+            return;
 
         const double padding = 10.0;
         const double dim = disabledAmount();
@@ -189,6 +194,8 @@ namespace artboard
         // instead of spilling past it (the box also clips, as a backstop).
         const double visible = std::max(0.0, width.value() - padding * 2.0);
         const double caretX = textWidthTo(mCaret_);
+        if (!hasFocus())
+            mScrollX = 0.0;   // an unfocused field reads from its start, not from the caret
         if (caretX - mScrollX > visible) mScrollX = caretX - visible;
         if (caretX - mScrollX < 0.0) mScrollX = caretX;
         const double fullW = textWidthTo((int)text.size());

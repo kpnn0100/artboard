@@ -695,6 +695,19 @@ shall dim its drawn colours by it — a disabled control must LOOK unavailable, 
 ignore input. A control that renders identically enabled and disabled is an unfinished
 state, not a styling preference.
 
+### FR-41 Suppressing a control's built-in appearance
+
+A composed control (`Button`, `Checkbox`, `Slider`, `TextBox`, `ToggleSwitch`, `ComboBox`,
+`ProgressBar`, `LineGraph`) supplies both BEHAVIOUR and a default APPEARANCE. A subclass
+that draws its own appearance — a themed control, or one generated from a design tool —
+needs the behaviour without the default picture, or the two pile up on top of each other.
+
+`Segment` shall therefore expose `drawsBuiltInVisuals` (default `true`). When it is false,
+a control shall contribute **no appearance of its own**: controls composed from child visual
+nodes hide those nodes, and self-drawn controls skip their `onPaint`. Behaviour — hit
+testing, gestures, value/press/check state, signals (FR-36) — is unaffected, because the
+appearance and the behaviour are separate concerns.
+
 ## 4. Non-functional Requirements
 
 ### NFR-1 Platform independence

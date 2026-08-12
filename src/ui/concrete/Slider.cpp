@@ -52,6 +52,8 @@ namespace artboard
 
     void Slider::onPaint(IRenderTarget &t) const
     {
+        if (!drawsBuiltInVisuals)   // FR-41: the subclass draws its own appearance
+            return;
         if (!mHasGradient)
             return;
         const double trackHeight = height.value() * 0.35;
@@ -196,6 +198,15 @@ namespace artboard
     void Slider::syncVisuals() const
     {
         ensureVisualTree();
+        if (!drawsBuiltInVisuals)   // FR-41
+        {
+            mTrack->visible = false;
+            mRangeFill->visible = false;
+            mThumb->visible = false;
+            mSubFill->visible = false;
+            mSubTick->visible = false;
+            return;
+        }
 
         const double trackHeight = height.value() * 0.35;
         const double trackY = (height.value() - trackHeight) * 0.5;

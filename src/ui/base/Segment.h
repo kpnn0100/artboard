@@ -38,6 +38,10 @@ namespace artboard
         Property pivotY{0.0};
 
         bool enabled = true;
+        /** FR-41: when false, a composed control contributes NO appearance of its own — a
+         *  subclass that draws its own picture keeps the behaviour without the default one
+         *  showing through underneath it. Behaviour is unaffected. */
+        bool drawsBuiltInVisuals = true;
         bool focusable = false;
         bool clipToBounds = false;
         bool inputTransparent = false;

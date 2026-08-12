@@ -70,6 +70,11 @@ namespace artboard
     void Checkbox::syncVisuals() const
     {
         ensureVisualTree();
+        mBox->visible = drawsBuiltInVisuals;   // FR-41
+        mIndicator->visible = drawsBuiltInVisuals;
+        mLabel->visible = drawsBuiltInVisuals;
+        if (!drawsBuiltInVisuals)
+            return;
 
         const double side = height.value();
         // Hover: brighten the box and pull its border toward the accent (indicator fill).

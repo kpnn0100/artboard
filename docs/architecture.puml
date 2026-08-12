@@ -118,6 +118,7 @@ package ui {
     + pivotX / pivotY : Property  ' FR-33 rotate/scale about a local pivot
     + isFadedOut()  ' hidden or opacity<=eps: not drawn, not hit-tested
     + disabledAmount()  ' FR-40 animated dim factor
+    + drawsBuiltInVisuals  ' FR-41 subclass supplies its own appearance
     + render() / renderOverlay()  ' 2nd pass: onOverlay, unclipped
     + raise()  ' move to end of parent children
     + isHovered() / hoverAmount()  ' animated hover factor (FR-24)

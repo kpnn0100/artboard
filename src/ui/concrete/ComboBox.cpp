@@ -102,6 +102,8 @@ namespace artboard
 
     void ComboBox::onPaint(IRenderTarget &t) const
     {
+        if (!drawsBuiltInVisuals)   // FR-41: the subclass draws its own appearance
+            return;
         const double w = width.value(), h = height.value();
         // Hover: brighten the field, pull its border toward the accent (caret colour).
         const double dim = disabledAmount();
