@@ -241,7 +241,9 @@ state under `reducedMotion()`.
 The `ui` module is split by role into two folders, **one class per file** for maintainability:
 
 - **`ui/base/`** — framework foundations and reusable building blocks:
-  - `Segment` (composite interactive base; `clipToBounds` clips children via the HAL `clipRect`;
+  - `Segment` (composite interactive base; animated group `opacity` fades the whole subtree through
+    the HAL `pushLayer`/`popLayer` (FR-32) and animated `rotation`/`scaleX`/`scaleY` about
+    `pivotX`/`pivotY` feed `localTransform()` (FR-33); `clipToBounds` clips children via the HAL `clipRect`;
     `snapTo()` constrains one edge to another segment's edge + offset, resolved each `advance()`
     so a segment follows the one it is snapped to; owns hover state + an animated `hoverAmount()`
     and routes bare `Move` gestures to the hovered handler — FR-24),

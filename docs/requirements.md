@@ -16,7 +16,8 @@ The system covers:
 - Composite UI objects through `Segment`.
 - A baseline theme and basic controls: `Button`, `Slider`, `Checkbox`, and `TextBox`.
 - A rectangular and path clip primitive on the render HAL, and clip-to-bounds for segments.
-- An opacity-group compositing primitive (`pushLayer`/`popLayer`) on the render HAL.
+- An opacity-group compositing primitive (`pushLayer`/`popLayer`) on the render HAL, and
+  animated per-segment group opacity, rotation, scale, and pivot built on it.
 - An extended widget set: `Knob`, `ToggleSwitch`, `ProgressBar`, `ComboBox`, `TabView`,
   `ScrollView`, and `LineGraph`.
 
@@ -534,6 +535,49 @@ honoring reduced motion (an instant snap, per FR-4e — `Spring::advance` alread
 Direct-manipulation drag/rubber-band positioning remains exempt from FR-25 (the pointer itself is
 the animation, per its existing exemption clause); only the post-release recovery is
 spring-driven.
+
+### FR-32 Segment group opacity
+
+`Segment` shall expose an animated `opacity` property (an `artboard::Property`, default `1.0`,
+meaningful range `[0,1]`) that fades the segment **and its whole child subtree as one group**.
+
+- When the effective opacity is `>= 1`, rendering is unchanged (no layer is opened, so the common
+  fully-opaque case costs nothing).
+- When it is strictly between `0` and `1`, `render()` shall bracket the segment's own paint **and**
+  all of its children in the existing `pushLayer(alpha)` / `popLayer()` HAL primitive (FR-27), so
+  overlapping descendants blend with each other at full opacity first and only the combined result
+  fades. Fading each descendant's colours individually is explicitly **not** equivalent: it
+  double-blends every overlap.
+- When it is `<= 0` (within `kOpacityEpsilon`), the segment and its subtree shall not be drawn at
+  all, and `hitTest` shall return `false` — a faded-out panel must not keep swallowing pointer
+  input. A partially transparent segment remains hit-testable.
+- Nested opacities compose multiplicatively, because a child's own layer composites into its
+  parent's layer.
+- `renderOverlay()` (the second, unclipped pass) shall honor opacity by the same rules, so a fading
+  popup fades its overlay content too.
+- `advance(nowMs)` shall tick the property, so `opacity.animate(...)` / `animateTo(...)` work like
+  every other animated segment field and honor reduced motion (FR-4e).
+
+This satisfies FR-25 (animated state transitions) for show/hide: a segment appears and disappears by
+fading its opacity, never by flipping `visible` in a single frame.
+
+### FR-33 Segment animated rotation, scale, and pivot
+
+`Segment` shall expose animated `rotation` (radians, default `0`), `scaleX` / `scaleY` (default
+`1`), and `pivotX` / `pivotY` (local-space pivot, default `0,0`) properties, composed into
+`localTransform()` as:
+
+`translate(x, y) · translate(pivotX, pivotY) · rotate(rotation) · scale(scaleX, scaleY) ·
+translate(-pivotX, -pivotY) · transform`
+
+so a segment rotates and scales **about its own pivot** while the free `Drawable::transform` field
+remains the innermost, caller-owned transform (existing behaviour is preserved exactly when all five
+new properties are at their defaults). Because hit testing already maps world points through
+`worldTransform().inverse()`, a rotated or scaled segment is hit-tested in its rotated/scaled frame
+with no extra code. `advance(nowMs)` shall tick all five properties.
+
+This gives FR-25-compliant motion for the transform channel: spin, pop, and squash animations are
+animated properties, not per-frame transform arithmetic re-derived by every application.
 
 ## 4. Non-functional Requirements
 

@@ -18,6 +18,25 @@ namespace artboard
         Property y{0.0};
         Property width{0.0};
         Property height{0.0};
+
+        // ---- group opacity (FR-32) ----
+        // Fades this segment AND its whole child subtree as ONE composited group via the
+        // HAL's pushLayer/popLayer (FR-27), so overlapping descendants blend at full opacity
+        // first and only the combined result fades. Animate it to show/hide instead of
+        // flipping `visible` (FR-25). <= kOpacityEpsilon means "gone": not drawn, not hit-tested.
+        Property opacity{1.0};
+        static constexpr double kOpacityEpsilon = 1e-3;
+
+        // ---- animated transform channel (FR-33) ----
+        // Rotation (radians) and scale are applied ABOUT (pivotX, pivotY) in local space, so a
+        // segment spins/pops around its own centre by setting the pivot to half its size. The
+        // free `Drawable::transform` field stays the innermost, caller-owned transform.
+        Property rotation{0.0};
+        Property scaleX{1.0};
+        Property scaleY{1.0};
+        Property pivotX{0.0};
+        Property pivotY{0.0};
+
         bool enabled = true;
         bool focusable = false;
         bool clipToBounds = false;
@@ -42,6 +61,10 @@ namespace artboard
 
         void setInputController(std::shared_ptr<InputController> controller) { mInputController = std::move(controller); }
         std::shared_ptr<InputController> inputController() const { return mInputController; }
+
+        /** True while this segment is effectively invisible (hidden or fully transparent):
+         *  it is neither drawn nor hit-tested. */
+        bool isFadedOut() const { return !visible || opacity.value() <= kOpacityEpsilon; }
 
         Rect localBounds() const { return Rect{0.0, 0.0, width.value(), height.value()}; }
         Transform localTransform() const;
@@ -88,6 +111,8 @@ namespace artboard
         virtual bool handleKey(const KeyEvent &event);
 
     private:
+        void renderContent(IRenderTarget &t, const Transform &parent) const;
+        void renderOverlayContent(IRenderTarget &t, const Transform &parent) const;
         Segment *topmostChildAt(const Point &worldPoint) const;
         bool dispatchGesture(const Gesture &g);
         void clearFocusRegistration();

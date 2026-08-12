@@ -1458,6 +1458,194 @@ TEST(Segment_clipToBounds_emits_clip_around_children)
     CHECK(on.count(K::ClipRect) == 1); // clip wraps the child subtree
 }
 
+
+// ───────────────────────── FR-32 group opacity ─────────────────────────
+TEST(Segment_opacity_default_opens_no_layer)
+{
+    auto root = std::make_shared<Segment>();
+    root->width.set(100); root->height.set(50);
+    auto child = std::make_shared<RectangleSegment>();
+    child->width.set(40); child->height.set(40);
+    child->style.paint = Paint::filled(Color::rgba(255, 0, 0));
+    root->addChild(child);
+
+    RecordingTarget t;
+    root->render(t);
+    CHECK(t.count(K::PushLayer) == 0); // fully opaque costs nothing
+    CHECK(t.count(K::PopLayer) == 0);
+    CHECK(t.count(K::FillPath) == 1);  // the child still drew
+}
+TEST(Segment_opacity_partial_brackets_whole_subtree_in_one_layer)
+{
+    auto root = std::make_shared<Segment>();
+    root->width.set(100); root->height.set(50);
+    auto a = std::make_shared<RectangleSegment>();
+    a->width.set(40); a->height.set(40);
+    a->style.paint = Paint::filled(Color::rgba(255, 0, 0));
+    auto b = std::make_shared<RectangleSegment>();
+    b->width.set(40); b->height.set(40);
+    b->style.paint = Paint::filled(Color::rgba(0, 255, 0));
+    root->addChild(a);
+    root->addChild(b);
+    root->opacity.set(0.25);
+
+    RecordingTarget t;
+    root->render(t);
+    CHECK(t.count(K::PushLayer) == 1); // ONE group, not one layer per child
+    CHECK(t.count(K::PopLayer) == 1);
+    CHECK(t.ops().front().kind == K::PushLayer);
+    CHECK_NEAR(t.ops().front().args[0], 0.25, 1e-12);
+    CHECK(t.ops().back().kind == K::PopLayer);
+    CHECK(t.count(K::FillPath) == 2); // both children inside the one layer
+}
+TEST(Segment_opacity_nested_layers_compose)
+{
+    auto root = std::make_shared<Segment>();
+    root->width.set(100); root->height.set(50);
+    root->opacity.set(0.5);
+    auto child = std::make_shared<RectangleSegment>();
+    child->width.set(40); child->height.set(40);
+    child->opacity.set(0.4);
+    root->addChild(child);
+
+    RecordingTarget t;
+    root->render(t);
+    CHECK(t.count(K::PushLayer) == 2); // child's layer composites into the parent's
+    CHECK(t.count(K::PopLayer) == 2);
+    CHECK_NEAR(t.ops().front().args[0], 0.5, 1e-12);
+}
+TEST(Segment_opacity_zero_draws_nothing_and_takes_no_input)
+{
+    auto root = std::make_shared<Segment>();
+    root->width.set(100); root->height.set(50);
+    auto child = std::make_shared<RectangleSegment>();
+    child->width.set(40); child->height.set(40);
+    root->addChild(child);
+    root->opacity.set(0.0);
+
+    RecordingTarget t;
+    root->render(t);
+    CHECK(t.ops().empty());                 // nothing drawn at all
+    CHECK(root->isFadedOut());
+    CHECK(!root->hitTest(Point{10, 10}));   // a faded-out panel must not swallow clicks
+    root->opacity.set(0.5);
+    CHECK(!root->isFadedOut());
+    CHECK(root->hitTest(Point{10, 10}));    // partially transparent still takes input
+}
+TEST(Segment_opacity_overlay_pass_fades_too)
+{
+    struct OverlaySeg : Segment
+    {
+        void onOverlay(IRenderTarget &t) const override
+        {
+            t.beginPath(); t.moveTo(0, 0); t.lineTo(1, 1); t.closePath(); t.fillPath();
+        }
+    };
+    auto root = std::make_shared<OverlaySeg>();
+    root->width.set(20); root->height.set(20);
+
+    RecordingTarget opaque;
+    root->renderOverlay(opaque);
+    CHECK(opaque.count(K::PushLayer) == 0);
+    CHECK(opaque.count(K::FillPath) == 1);
+
+    root->opacity.set(0.3);
+    RecordingTarget faded;
+    root->renderOverlay(faded);
+    CHECK(faded.count(K::PushLayer) == 1);
+    CHECK(faded.count(K::PopLayer) == 1);
+    CHECK_NEAR(faded.ops().front().args[0], 0.3, 1e-12);
+
+    root->opacity.set(0.0);
+    RecordingTarget gone;
+    root->renderOverlay(gone);
+    CHECK(gone.ops().empty());
+}
+TEST(Segment_opacity_animates_and_is_ticked_by_advance)
+{
+    auto seg = std::make_shared<Segment>();
+    seg->opacity.set(0.0);
+    seg->opacity.animate(Tween::range(0.0, 1.0, 200.0).withEasing(Easing::Linear), 0.0);
+    seg->advance(0.0);
+    CHECK_NEAR(seg->opacity.value(), 0.0, 1e-9);
+    seg->advance(100.0);
+    CHECK_NEAR(seg->opacity.value(), 0.5, 1e-9);
+    seg->advance(200.0);
+    CHECK_NEAR(seg->opacity.value(), 1.0, 1e-9);
+    CHECK(!seg->opacity.isAnimating());
+}
+
+// ───────────────────────── FR-33 rotation / scale / pivot ─────────────────────────
+TEST(Segment_rotation_about_pivot_transforms_children)
+{
+    auto seg = std::make_shared<Segment>();
+    seg->width.set(20); seg->height.set(20);
+    // Defaults must reproduce the original translate(x,y) exactly.
+    seg->x.set(5); seg->y.set(7);
+    Point p0 = seg->localTransform().apply(Point{0, 0});
+    CHECK_NEAR(p0.x, 5.0, 1e-12);
+    CHECK_NEAR(p0.y, 7.0, 1e-12);
+
+    // Rotate 90 deg about the segment's own centre (10,10): the local origin maps to (20,0)
+    // in the segment's parent frame, offset by (x,y).
+    seg->pivotX.set(10); seg->pivotY.set(10);
+    seg->rotation.set(M_PI / 2);
+    Point p = seg->localTransform().apply(Point{0, 0});
+    CHECK_NEAR(p.x, 5.0 + 20.0, 1e-9);
+    CHECK_NEAR(p.y, 7.0 + 0.0, 1e-9);
+    // The pivot itself is a fixed point of the rotation.
+    Point c = seg->localTransform().apply(Point{10, 10});
+    CHECK_NEAR(c.x, 5.0 + 10.0, 1e-9);
+    CHECK_NEAR(c.y, 7.0 + 10.0, 1e-9);
+}
+TEST(Segment_scale_about_pivot_and_hit_test_follows)
+{
+    auto root = std::make_shared<Segment>();
+    root->width.set(200); root->height.set(200);
+    auto child = std::make_shared<RectangleSegment>();
+    child->x.set(50); child->y.set(50);
+    child->width.set(20); child->height.set(20);
+    root->addChild(child);
+
+    CHECK(child->hitTest(Point{55, 55}));
+    CHECK(!child->hitTest(Point{85, 85}));
+
+    // Scale 4x about the child's own centre (10,10): local (0,0)..(20,20) covers 20..100.
+    child->pivotX.set(10); child->pivotY.set(10);
+    child->scaleX.set(4.0); child->scaleY.set(4.0);
+    CHECK(child->hitTest(Point{85, 85}));   // hit testing runs in the scaled frame for free
+    CHECK(!child->hitTest(Point{135, 135}));
+}
+TEST(Segment_transform_properties_are_ticked_and_render_emits_them)
+{
+    auto seg = std::make_shared<RectangleSegment>();
+    seg->width.set(10); seg->height.set(10);
+    seg->pivotX.set(5); seg->pivotY.set(5);
+    seg->rotation.animate(Tween::range(0.0, M_PI, 100.0).withEasing(Easing::Linear), 0.0);
+    seg->scaleX.animate(Tween::range(1.0, 2.0, 100.0).withEasing(Easing::Linear), 0.0);
+    seg->scaleY.animate(Tween::range(1.0, 2.0, 100.0).withEasing(Easing::Linear), 0.0);
+    seg->advance(50.0);
+    CHECK_NEAR(seg->rotation.value(), M_PI / 2, 1e-9);
+    CHECK_NEAR(seg->scaleX.value(), 1.5, 1e-9);
+    CHECK_NEAR(seg->scaleY.value(), 1.5, 1e-9);
+
+    RecordingTarget t;
+    seg->render(t);
+    // The emitted transform is the composed pivot/rotate/scale matrix, not a bare translate.
+    const DrawOp *st = nullptr;
+    for (const auto &op : t.ops())
+        if (op.kind == K::SetTransform) { st = &op; break; }
+    CHECK(st != nullptr);
+    CHECK_NEAR(st->transform.a, 1.5 * std::cos(M_PI / 2), 1e-9);
+    CHECK_NEAR(st->transform.b, 1.5 * std::sin(M_PI / 2), 1e-9);
+    seg->advance(100.0);
+    seg->pivotX.animate(Tween::range(5.0, 9.0, 100.0).withEasing(Easing::Linear), 100.0);
+    seg->pivotY.animate(Tween::range(5.0, 9.0, 100.0).withEasing(Easing::Linear), 100.0);
+    seg->advance(200.0);
+    CHECK_NEAR(seg->pivotX.value(), 9.0, 1e-9);
+    CHECK_NEAR(seg->pivotY.value(), 9.0, 1e-9);
+}
+
 // ───────────────────────── widgets ─────────────────────────
 TEST(Knob_drag_keys_and_render)
 {

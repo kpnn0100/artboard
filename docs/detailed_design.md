@@ -16,6 +16,8 @@
 ### Important fields
 
 - `Property x, y, width, height`
+- `Property opacity` (FR-32) — group alpha, default `1`; `static constexpr kOpacityEpsilon = 1e-3`
+- `Property rotation, scaleX, scaleY, pivotX, pivotY` (FR-33) — the animated transform channel
 - `bool enabled, visible, focusable, clipToBounds`
 - `int focusIndex`
 - `std::vector<std::shared_ptr<Segment>> mChildren`
@@ -25,15 +27,28 @@
 
 ### Important operations
 
-- `render()` composes parent and local transforms, paints self, then paints children.
-- `hitTest()` checks children from topmost to backmost, then checks the local bounds.
+- `render()` (FR-32) is a thin opacity wrapper around `renderContent()`: it returns immediately when
+  `isFadedOut()`, calls `renderContent()` directly when the alpha is `>= 1 - kOpacityEpsilon` (so the
+  common opaque case opens no layer), and otherwise brackets the *whole* call — own paint plus every
+  child — in one `pushLayer(alpha)` / `popLayer()` pair. `renderContent()` holds the original body:
+  compose parent and local transforms, paint self, then paint children. `renderOverlay()` /
+  `renderOverlayContent()` split the same way. Nested opacity composes multiplicatively because a
+  child's layer composites into its parent's.
+- `localTransform()` (FR-33) returns `translate(x,y) · translate(pivot) · rotate(rotation) ·
+  scale(scaleX,scaleY) · translate(-pivot) · transform`. The pivot/rotate/scale block is skipped
+  entirely when rotation is `0` and both scales are `1`, so the default collapses to the original
+  `translate(x,y).mul(transform)` bit-for-bit. Hit testing needs no change: `toLocal()` already maps
+  through `worldTransform().inverse()`, so a rotated/scaled segment is tested in its own frame.
+- `hitTest()` rejects `isFadedOut()` segments (FR-32: a panel faded to 0 must stop swallowing
+  clicks), then checks children from topmost to backmost, then the local bounds.
 - `onGesture()` delegates to `dispatchGesture()`.
 - `dispatchGesture()` on a bare `Move` (no press capture) recurses to the deepest hit-tested child
   (as `Down` does) and, at the leaf, calls `setHovered(this)` and delivers the move to the handler;
   a `Move` during a press still goes to the captured child (FR-24).
 - `advance(nowMs)` first calls `updateHoverAnim(nowMs)`, which eases `mHoverAmount` toward `1`
   while hovered/`enabled`/`visible` and `0` otherwise (≈120 ms `EaseOutCubic`, reduced-motion-safe),
-  then updates the layout properties and children.
+  then updates the layout properties, `opacity` (FR-32), the five transform properties (FR-33), and
+  children.
 - `setHovered(seg)` / `hoveredSegment()` manage the one global hover owner (clearing the previous);
   the destructor relinquishes hover if this segment owned it. `isHovered()` / `hoverAmount()` /
   `isHoverWithin()` (self-or-descendant) are the read side controls use.

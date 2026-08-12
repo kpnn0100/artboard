@@ -62,9 +62,23 @@ namespace artboard
 
     void Segment::render(IRenderTarget &t, const Transform &parent) const
     {
-        if (!visible)
+        // FR-32: fade the whole subtree as ONE group. Fully transparent draws nothing at all;
+        // fully opaque opens no layer (the common case stays free).
+        if (isFadedOut())
             return;
+        const double alpha = opacity.value();
+        if (alpha >= 1.0 - kOpacityEpsilon)
+        {
+            renderContent(t, parent);
+            return;
+        }
+        t.pushLayer(alpha);
+        renderContent(t, parent);
+        t.popLayer();
+    }
 
+    void Segment::renderContent(IRenderTarget &t, const Transform &parent) const
+    {
         const Transform world = parent.mul(localTransform());
         t.save();
         t.setTransform(world);
@@ -91,7 +105,9 @@ namespace artboard
 
     bool Segment::hitTest(const Point &p) const
     {
-        if (!visible || !enabled)
+        // A faded-out segment (FR-32) takes no input: a panel that has animated to opacity 0
+        // must not keep swallowing clicks the way a still-`visible` one would.
+        if (isFadedOut() || !enabled)
             return false;
 
         for (auto it = mChildren.rbegin(); it != mChildren.rend(); ++it)
@@ -111,8 +127,22 @@ namespace artboard
 
     void Segment::renderOverlay(IRenderTarget &t, const Transform &parent) const
     {
-        if (!visible)
+        // FR-32: the overlay pass fades with the same group rules as render().
+        if (isFadedOut())
             return;
+        const double alpha = opacity.value();
+        if (alpha >= 1.0 - kOpacityEpsilon)
+        {
+            renderOverlayContent(t, parent);
+            return;
+        }
+        t.pushLayer(alpha);
+        renderOverlayContent(t, parent);
+        t.popLayer();
+    }
+
+    void Segment::renderOverlayContent(IRenderTarget &t, const Transform &parent) const
+    {
         const Transform world = parent.mul(localTransform());
         t.save();
         t.setTransform(world);
@@ -155,7 +185,20 @@ namespace artboard
 
     Transform Segment::localTransform() const
     {
-        return Transform::translation(x.value(), y.value()).mul(transform);
+        // FR-33: translate(x,y) . pivot . rotate . scale . -pivot . transform.
+        // Identity defaults collapse to the original translate(x,y).mul(transform).
+        Transform t = Transform::translation(x.value(), y.value());
+        const double rot = rotation.value();
+        const double sx = scaleX.value(), sy = scaleY.value();
+        if (rot != 0.0 || sx != 1.0 || sy != 1.0)
+        {
+            const double px = pivotX.value(), py = pivotY.value();
+            t = t.mul(Transform::translation(px, py))
+                    .mul(Transform::rotation(rot))
+                    .mul(Transform::scaling(sx, sy))
+                    .mul(Transform::translation(-px, -py));
+        }
+        return t.mul(transform);
     }
 
     Transform Segment::worldTransform() const
@@ -177,6 +220,12 @@ namespace artboard
         y.update(nowMs);
         width.update(nowMs);
         height.update(nowMs);
+        opacity.update(nowMs);   // FR-32
+        rotation.update(nowMs);  // FR-33
+        scaleX.update(nowMs);
+        scaleY.update(nowMs);
+        pivotX.update(nowMs);
+        pivotY.update(nowMs);
         resolveSnap();
         for (const auto &child : mChildren)
             child->advance(nowMs);
