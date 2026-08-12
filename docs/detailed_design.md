@@ -280,6 +280,25 @@ Protected virtuals fired from the state transitions themselves, never from the r
 the same one-line call — the segment's `render()` has already installed the world transform, so the
 path's local coordinates land in segment space with no second transform path to keep in sync.
 
+## 2k. `TextBox` caret (FR-38)
+
+State: `mCaret_` (a byte offset into `text`, always on a codepoint boundary) and `mMeasure`
+(the last `IRenderTarget` seen by `render`, so caret placement can use the adapter's own
+metrics instead of the estimate).
+
+- `setCaret(b)` clamps into `[0, size]` and then walks left off any UTF-8 continuation byte,
+  so no operation can ever leave the caret mid-codepoint. `stepLeft`/`stepRight` move by a
+  whole codepoint.
+- `handleKey` clamps first (`text` may have been assigned from outside since the last key),
+  then handles Left/Right/Home/End **before** the `readOnly` check — inspection is not a
+  mutation — and insert/Backspace/Delete after it. Backspace deletes `[stepLeft(caret),
+  caret)`; Delete deletes `[caret, stepRight(caret))`.
+- `handleGesture` on `Down` scans the codepoint boundaries and picks the one whose prefix
+  width is nearest the pointer, using `textWidthTo` (target metrics when available, the
+  estimate otherwise).
+- `syncVisuals` draws the caret at `padding + textWidthTo(mCaret_)` rather than at the end
+  of the string; it still fades with the focus factor.
+
 ## 3. `InputController`
 
 `InputController` is an abstract behavior strategy.

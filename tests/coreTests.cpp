@@ -2086,6 +2086,126 @@ TEST(Path_drawable_still_renders_through_emit)
     CHECK(p.segmentCount() == 0);
 }
 
+
+// ───────────────────────── FR-38 TextBox caret editing ─────────────────────────
+TEST(TextBox_inserts_at_the_caret_and_deletes_both_ways)
+{
+    auto tb = std::make_shared<TextBox>();
+    tb->width.set(200); tb->height.set(28);
+    tb->focusable = true;
+    tb->requestFocus();
+
+    auto type = [&](const std::string &s) {
+        KeyEvent k; k.type = KeyEvent::Type::Text; k.text = s;
+        CHECK(tb->dispatchKey(k));
+    };
+    auto press = [&](int code) {
+        KeyEvent k; k.type = KeyEvent::Type::Down; k.keyCode = code;
+        return tb->dispatchKey(k);
+    };
+
+    type("min(w, h)");
+    CHECK(tb->text == "min(w, h)");
+    CHECK(tb->caret() == 9);
+
+    CHECK(press(36));                 // Home
+    CHECK(tb->caret() == 0);
+    type("2 * ");
+    CHECK(tb->text == "2 * min(w, h)");
+    CHECK(tb->caret() == 4);
+
+    CHECK(press(39));                 // Right
+    CHECK(tb->caret() == 5);
+    CHECK(press(37));                 // Left
+    CHECK(tb->caret() == 4);
+    CHECK(press(8));                  // Backspace deletes BEFORE the caret
+    CHECK(tb->text == "2 *min(w, h)");
+    CHECK(tb->caret() == 3);
+    CHECK(press(46));                 // Delete removes AFTER the caret
+    CHECK(tb->text == "2 *in(w, h)");
+    CHECK(tb->caret() == 3);
+
+    CHECK(press(35));                 // End
+    CHECK(tb->caret() == (int)tb->text.size());
+    CHECK(!press(8) == false);        // backspace at the end still deletes
+    CHECK(tb->text == "2 *in(w, h");
+}
+TEST(TextBox_caret_never_splits_a_utf8_codepoint)
+{
+    auto tb = std::make_shared<TextBox>();
+    tb->focusable = true;
+    tb->requestFocus();
+    KeyEvent k; k.type = KeyEvent::Type::Text; k.text = "aéb";   // é is two bytes
+    tb->dispatchKey(k);
+    CHECK(tb->text == "a\xc3\xa9" "b");
+    CHECK(tb->caret() == 4);
+
+    KeyEvent left; left.type = KeyEvent::Type::Down; left.keyCode = 37;
+    tb->dispatchKey(left);
+    CHECK(tb->caret() == 3);
+    tb->dispatchKey(left);
+    CHECK(tb->caret() == 1);          // skipped the whole two-byte codepoint
+    KeyEvent del; del.type = KeyEvent::Type::Down; del.keyCode = 46;
+    tb->dispatchKey(del);
+    CHECK(tb->text == "ab");          // the codepoint went as one unit
+
+    tb->setCaret(99);
+    CHECK(tb->caret() == 2);          // clamped
+    tb->setCaret(-5);
+    CHECK(tb->caret() == 0);
+}
+TEST(TextBox_readonly_moves_the_caret_but_changes_nothing)
+{
+    auto tb = std::make_shared<TextBox>();
+    tb->focusable = true;
+    tb->requestFocus();
+    tb->text = "locked";
+    tb->caretToEnd();
+    tb->readOnly = true;
+
+    KeyEvent type; type.type = KeyEvent::Type::Text; type.text = "x";
+    CHECK(!tb->dispatchKey(type));
+    CHECK(tb->text == "locked");
+    KeyEvent back; back.type = KeyEvent::Type::Down; back.keyCode = 8;
+    CHECK(!tb->dispatchKey(back));
+    CHECK(tb->text == "locked");
+    KeyEvent home; home.type = KeyEvent::Type::Down; home.keyCode = 36;
+    CHECK(tb->dispatchKey(home));     // inspection still works
+    CHECK(tb->caret() == 0);
+}
+TEST(TextBox_press_places_the_caret_and_the_caret_is_drawn_there)
+{
+    auto tb = std::make_shared<TextBox>();
+    tb->width.set(200); tb->height.set(28);
+    tb->focusable = true;
+    tb->text = "abcdef";
+    tb->caretToEnd();
+
+    RecordingTarget t;
+    tb->render(t);   // gives the box a target to measure with
+
+    // RecordingTarget's estimate is 0.5em per glyph at 14px = 7px; padding is 10px.
+    tb->onGesture({Gesture::Type::Down, {10.0 + 7.0 * 2.0, 14}, {0, 0}, PointerButton::Left});
+    CHECK(tb->caret() == 2);
+    tb->onGesture({Gesture::Type::Down, {10.0, 14}, {0, 0}, PointerButton::Left});
+    CHECK(tb->caret() == 0);
+    tb->onGesture({Gesture::Type::Down, {500.0, 14}, {0, 0}, PointerButton::Left});
+    CHECK(tb->caret() == 6);
+
+    // The drawn caret follows the caret position, not the end of the text.
+    tb->setCaret(3);
+    tb->advance(0.0);
+    tb->advance(400.0);              // let the focus fade settle so the caret is visible
+    RecordingTarget mid;
+    tb->render(mid);
+    double caretX = -1;
+    for (const auto &op : mid.ops())
+        if (op.kind == K::SetTransform && op.transform.e > 10.0 && op.transform.e < 40.0)
+            caretX = op.transform.e;
+    CHECK(caretX > 0.0);
+    CHECK(caretX < 10.0 + 7.0 * 6.0);   // strictly left of where the end-of-text caret would sit
+}
+
 // ───────────────────────── widgets ─────────────────────────
 TEST(Knob_drag_keys_and_render)
 {

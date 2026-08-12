@@ -1,4 +1,5 @@
 #include "TextBox.h"
+#include <cmath>
 #include "../base/Interaction.h"
 
 namespace artboard
@@ -19,8 +20,49 @@ namespace artboard
 
     void TextBox::render(IRenderTarget &t, const Transform &parent) const
     {
+        mMeasure = &t;   // remember a real target so caret placement uses real metrics (FR-38)
         syncVisuals();
         Segment::render(t, parent);
+    }
+
+    // ---- caret (FR-38) ----
+
+    void TextBox::setCaret(int byteOffset)
+    {
+        const int n = (int)text.size();
+        int c = byteOffset < 0 ? 0 : (byteOffset > n ? n : byteOffset);
+        // Never land inside a multi-byte codepoint.
+        while (c > 0 && c < n && ((unsigned char)text[(size_t)c] & 0xC0) == 0x80)
+            --c;
+        mCaret_ = c;
+    }
+
+    int TextBox::stepLeft(int from) const
+    {
+        int c = from - 1;
+        while (c > 0 && ((unsigned char)text[(size_t)c] & 0xC0) == 0x80)
+            --c;
+        return c < 0 ? 0 : c;
+    }
+
+    int TextBox::stepRight(int from) const
+    {
+        const int n = (int)text.size();
+        int c = from + 1;
+        while (c < n && ((unsigned char)text[(size_t)c] & 0xC0) == 0x80)
+            ++c;
+        return c > n ? n : c;
+    }
+
+    double TextBox::textWidthTo(int bytes) const
+    {
+        const int n = (int)text.size();
+        const int b = bytes < 0 ? 0 : (bytes > n ? n : bytes);
+        const std::string prefix = text.substr(0, (size_t)b);
+        if (mMeasure)
+            return mMeasure->measureText(prefix, mStyle.text.sizePx, mStyle.text.fontFamily,
+                                         mStyle.text.letterSpacingPx);
+        return estimateTextWidth(prefix, mStyle.text.sizePx);
     }
 
     void TextBox::advance(double nowMs)
@@ -40,6 +82,26 @@ namespace artboard
         if (g.type == Gesture::Type::Down)
         {
             requestFocus();
+            // Place the caret at the inter-character boundary nearest the pointer, measured
+            // with the adapter's own metrics so it lands where the glyphs really are (FR-38).
+            const double padding = 10.0;
+            const double target = localPoint.x - padding;
+            int best = 0;
+            double bestDist = -1.0;
+            for (int b = 0; b <= (int)text.size(); b = (b == (int)text.size()) ? b + 1 : stepRight(b))
+            {
+                if (b > (int)text.size())
+                    break;
+                const double d = std::fabs(textWidthTo(b) - target);
+                if (bestDist < 0.0 || d < bestDist)
+                {
+                    bestDist = d;
+                    best = b;
+                }
+                if (b == (int)text.size())
+                    break;
+            }
+            setCaret(best);
             return true;
         }
         return Segment::handleGesture(g, localPoint);
@@ -47,16 +109,40 @@ namespace artboard
 
     bool TextBox::handleKey(const KeyEvent &event)
     {
+        setCaret(mCaret_);   // `text` may have been assigned from outside since the last key
+
+        // Caret movement works even when read-only: a value can be inspected without
+        // being changed (FR-38).
+        if (event.type == KeyEvent::Type::Down)
+        {
+            switch (event.keyCode)
+            {
+            case 37: setCaret(stepLeft(mCaret_)); return true;             // Left
+            case 39: setCaret(stepRight(mCaret_)); return true;            // Right
+            case 36: setCaret(0); return true;                             // Home
+            case 35: setCaret((int)text.size()); return true;              // End
+            default: break;
+            }
+        }
         if (readOnly)
             return false;
         if (event.type == KeyEvent::Type::Text && !event.text.empty())
         {
-            text += event.text;
+            text.insert((size_t)mCaret_, event.text);
+            setCaret(mCaret_ + (int)event.text.size());
             return true;
         }
-        if (event.type == KeyEvent::Type::Down && event.keyCode == 8 && !text.empty())
+        if (event.type == KeyEvent::Type::Down && event.keyCode == 8 && mCaret_ > 0)
         {
-            text.pop_back();
+            const int from = stepLeft(mCaret_);                            // Backspace
+            text.erase((size_t)from, (size_t)(mCaret_ - from));
+            setCaret(from);
+            return true;
+        }
+        if (event.type == KeyEvent::Type::Down && event.keyCode == 46 && mCaret_ < (int)text.size())
+        {
+            const int to = stepRight(mCaret_);                             // Delete
+            text.erase((size_t)mCaret_, (size_t)(to - mCaret_));
             return true;
         }
         return Segment::handleKey(event);
@@ -100,7 +186,8 @@ namespace artboard
         caret.a *= fa;  // caret fades in with focus, out on blur
         mCaret->style = {Paint::filled(caret), 0.0};
         mCaret->visible = fa > 0.01;
-        mCaret->x.set(padding + estimateTextWidth(text, mStyle.text.sizePx));
+        // Drawn AT the caret position, not always at the end (FR-38).
+        mCaret->x.set(padding + textWidthTo(mCaret_));
         mCaret->y.set(8.0);
         mCaret->width.set(2.0);
         mCaret->height.set(height.value() - 16.0);

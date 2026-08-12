@@ -652,6 +652,26 @@ its ops and paint into the target's *current* transform space without touching g
 `Path::onDraw` and `PathSegment::onPaint` both call it. `Path` shall also expose `clear()` and
 `segmentCount()` so authored geometry can be rebuilt and inspected.
 
+### FR-38 Text entry caret and editing
+
+`TextBox` shall maintain a caret position within its text and support the editing gestures a
+single-line field is expected to have, so a field holding a real value (a path, an
+expression, a name) can be corrected rather than only retyped from the end:
+
+- Typed text is inserted **at the caret**, which then advances past it.
+- Backspace deletes the codepoint **before** the caret; Delete deletes the one **after**.
+  Neither ever splits a multi-byte UTF-8 codepoint.
+- Left/Right move the caret by one codepoint; Home/End move it to the ends. All four clamp
+  to the text.
+- A press positions the caret at the nearest inter-character boundary to the pointer,
+  measured with `IRenderTarget::measureText` (FR-22) so it lands where the glyphs actually
+  are on the adapter in use, rather than at an estimate.
+- The caret is drawn at its position (not always at the end) and continues to fade with
+  focus. Setting `text` programmatically clamps the caret into range.
+
+`readOnly` shall continue to reject every mutation while still allowing focus and caret
+movement, so a value can be read and inspected without being changed.
+
 ## 4. Non-functional Requirements
 
 ### NFR-1 Platform independence

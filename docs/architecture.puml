@@ -162,7 +162,9 @@ package ui {
   }
   class Button
   class Checkbox
-  class TextBox
+  class TextBox {
+    + caret() / setCaret(b) / caretToEnd()  ' FR-38 caret editing
+  }
   class Knob
   class ToggleSwitch
   class ProgressBar
