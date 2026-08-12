@@ -37,6 +37,18 @@ namespace artboard
         bool active() const { return start > 0.0 || end < 1.0 || offset != 0.0; }
     };
 
+    /** Which part of a DISK a shape is (FR-43) — a wedge cut by two rays from the centre,
+     *  which is what makes a pie, a ring segment, or a pac-man. Distinct from `Trim`, which
+     *  says how much of an OUTLINE is drawn. Defaults describe the whole disk. */
+    struct Arc
+    {
+        double start = 0.0;        // radians, 0 = +x, increasing clockwise on screen
+        double sweep = 6.283185307179586;   // a full turn
+        double innerRatio = 0.0;   // 0 = pie; >0 = ring segment of that fraction of the radius
+        /** True when this describes anything other than the whole disk. */
+        bool active() const;
+    };
+
     /** Fill then stroke the current path according to `paint`. */
     void applyPaint(IRenderTarget &t, const Paint &paint);
 
@@ -168,6 +180,11 @@ namespace artboard
         static Path trimmedRange(const std::vector<Piece> &ps, double total, double a, double b);
         std::vector<Seg> mSegs;
     };
+
+    /** The ellipse SECTOR as a Path (FR-43): a pie when `innerRatio` is 0, a ring segment
+     *  when it is greater. A full sweep gives the plain ellipse (or an annulus). */
+    Path ellipseArcPath(double cx, double cy, double rx, double ry,
+                        double startRad, double sweepRad, double innerRatio);
 
     /** The ellipse outline as a Path — the same geometry `drawCircle` emits, as data, so it
      *  can be trimmed (FR-42) without a second implementation of the outline. */

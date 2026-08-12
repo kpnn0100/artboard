@@ -47,6 +47,100 @@ namespace artboard
         return p;
     }
 
+    bool Arc::active() const
+    {
+        return innerRatio > 0.0 || std::fabs(sweep) < 6.283185307179586 - 1e-9 || start != 0.0;
+    }
+
+    namespace
+    {
+        constexpr double kTau = 6.283185307179586;
+
+        Point onEllipse(double cx, double cy, double rx, double ry, double a)
+        {
+            return Point{cx + rx * std::cos(a), cy + ry * std::sin(a)};
+        }
+
+        /*  Append the elliptical arc from `a0` to `a0 + sweep` to `p`, as cubic segments of at
+         *  most 90 degrees each. The control-point scale is the standard 4/3*tan(delta/4),
+         *  which is what makes the approximation accurate at any radius — so no new HAL
+         *  primitive is needed to draw a true arc.
+         */
+        void appendArc(Path &p, double cx, double cy, double rx, double ry, double a0, double sweep)
+        {
+            const int steps = std::max(1, (int)std::ceil(std::fabs(sweep) / (kTau / 4.0)));
+            const double delta = sweep / steps;
+            const double k = 4.0 / 3.0 * std::tan(delta / 4.0);
+            double a = a0;
+            for (int i = 0; i < steps; ++i)
+            {
+                const double a1 = a + delta;
+                const Point p0 = onEllipse(cx, cy, rx, ry, a);
+                const Point p1 = onEllipse(cx, cy, rx, ry, a1);
+                // Tangents of the parametric ellipse at each end.
+                const Point t0{-rx * std::sin(a), ry * std::cos(a)};
+                const Point t1{-rx * std::sin(a1), ry * std::cos(a1)};
+                p.cubicTo(p0.x + k * t0.x, p0.y + k * t0.y,
+                          p1.x - k * t1.x, p1.y - k * t1.y, p1.x, p1.y);
+                a = a1;
+            }
+        }
+    }
+
+    Path ellipseArcPath(double cx, double cy, double rx, double ry,
+                        double startRad, double sweepRad, double innerRatio)
+    {
+        Path p;
+        if (sweepRad == 0.0 || rx <= 0.0 || ry <= 0.0)
+            return p;   // nothing to draw
+
+        const double ratio = innerRatio < 0.0 ? 0.0 : (innerRatio > 1.0 ? 1.0 : innerRatio);
+        const bool full = std::fabs(sweepRad) >= kTau - 1e-9;
+        const double sweep = full ? (sweepRad < 0.0 ? -kTau : kTau) : sweepRad;
+
+        if (full)
+        {
+            // The whole disk: the plain ellipse, or an annulus whose inner contour is wound
+            // the OTHER way so nonzero winding leaves the hole empty.
+            const Point s = onEllipse(cx, cy, rx, ry, startRad);
+            p.moveTo(s.x, s.y);
+            appendArc(p, cx, cy, rx, ry, startRad, sweep);
+            p.close();
+            if (ratio > 0.0)
+            {
+                const double irx = rx * ratio, iry = ry * ratio;
+                const Point is = onEllipse(cx, cy, irx, iry, startRad + sweep);
+                p.moveTo(is.x, is.y);
+                appendArc(p, cx, cy, irx, iry, startRad + sweep, -sweep);
+                p.close();
+            }
+            return p;
+        }
+
+        if (ratio <= 0.0)
+        {
+            // A pie: centre, out to the arc's start, round, and back to the centre. The two
+            // straight edges are the rays that make a pac-man's mouth.
+            p.moveTo(cx, cy);
+            const Point s = onEllipse(cx, cy, rx, ry, startRad);
+            p.lineTo(s.x, s.y);
+            appendArc(p, cx, cy, rx, ry, startRad, sweep);
+            p.close();
+            return p;
+        }
+
+        // A ring segment: out along the outer arc, across, back along the inner one.
+        const double irx = rx * ratio, iry = ry * ratio;
+        const Point outerStart = onEllipse(cx, cy, rx, ry, startRad);
+        p.moveTo(outerStart.x, outerStart.y);
+        appendArc(p, cx, cy, rx, ry, startRad, sweep);
+        const Point innerEnd = onEllipse(cx, cy, irx, iry, startRad + sweep);
+        p.lineTo(innerEnd.x, innerEnd.y);
+        appendArc(p, cx, cy, irx, iry, startRad + sweep, -sweep);
+        p.close();
+        return p;
+    }
+
     Path ellipsePath(double cx, double cy, double rx, double ry)
     {
         const double k = 0.5522847498307936;   // cubic bezier circle constant

@@ -16,6 +16,9 @@ namespace artboard
          *  from 0 to 1 makes the shape draw itself in; a circle trimmed to a sub-range is
          *  an arc. */
         Trim trim;
+        /** Which part of the DISK this is (FR-43): a pie, a ring segment, or a pac-man.
+         *  Distinct from `trim`, which says how much of the outline is drawn. */
+        Arc arc;
 
     protected:
         void onPaint(IRenderTarget &t) const override;

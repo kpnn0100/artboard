@@ -2237,6 +2237,29 @@ TEST(TextBox_clips_and_scrolls_to_keep_the_caret_visible)
     tb->render(atStart);
     CHECK(labelX(atEnd) < labelX(atStart));      // it scrolled to follow the caret
 
+    // Blurring resets the view to the start: a column of values must not all show their
+    // tail ends just because their carets sit at the end.
+    tb->setCaret((int)tb->text.size());
+    RecordingTarget scrolledToEnd;
+    tb->render(scrolledToEnd);
+    Segment *other = nullptr;
+    (void)other;
+    tb->text = "min(w, h) * 0.5 + something";
+    {
+        auto blurTarget = std::make_shared<TextBox>();
+        blurTarget->focusable = true;
+        blurTarget->requestFocus();               // steal focus away from tb
+    }
+    CHECK(!tb->hasFocus());
+    RecordingTarget blurred;
+    tb->render(blurred);
+    bool startsAtPadding = false;
+    for (const auto &op : blurred.ops())
+        if (op.kind == K::SetTransform && std::fabs(op.transform.e - 10.0) < 1e-9)
+            startsAtPadding = true;
+    CHECK(startsAtPadding);
+
+    tb->requestFocus();
     tb->text = "ab";                              // short again: no scroll
     tb->caretToEnd();
     RecordingTarget shortText;
@@ -2614,6 +2637,139 @@ TEST(Path_trim_handles_quadratics_and_multiple_subpaths)
     two.moveTo(0, 0).lineTo(10, 0).moveTo(0, 10).lineTo(10, 10);
     CHECK_NEAR(two.length(), 20.0, 1e-9);         // a move does not add length
     CHECK_NEAR(two.trimmed(0.0, 0.5).length(), 10.0, 1e-9);
+}
+
+
+// ───────────────────────── FR-43 ellipse sector ─────────────────────────
+namespace
+{
+    /** Every point the path visits, in order — enough to check a sector's shape. */
+    std::vector<Point> pathPoints(const Path &p)
+    {
+        Path copy = p;
+        copy.paint = Paint::filled(Color::rgba(255, 255, 255));
+        RecordingTarget t;
+        copy.render(t);
+        std::vector<Point> out;
+        for (const auto &op : t.ops())
+        {
+            if (op.kind == K::MoveTo || op.kind == K::LineTo) out.push_back({op.args[0], op.args[1]});
+            else if (op.kind == K::CubicTo) out.push_back({op.args[4], op.args[5]});
+        }
+        return out;
+    }
+    bool nearPoint(const Point &p, double x, double y, double eps = 0.5)
+    {
+        return std::fabs(p.x - x) < eps && std::fabs(p.y - y) < eps;
+    }
+}
+TEST(Ellipse_sector_pie_starts_and_ends_at_the_centre)
+{
+    // A pie is the wedge between two rays from the centre — the two straight edges are what
+    // make a pac-man's mouth.
+    const Path quarter = ellipseArcPath(100, 100, 50, 50, 0.0, M_PI / 2, 0.0);
+    const std::vector<Point> pts = pathPoints(quarter);
+    CHECK(pts.size() >= 3);
+    CHECK(nearPoint(pts.front(), 100, 100));      // starts at the centre
+    CHECK(nearPoint(pts[1], 150, 100));           // out along 0 degrees (+x)
+    CHECK(nearPoint(pts.back(), 100, 150));       // round to 90 degrees (+y, downward)
+
+    RecordingTarget t;
+    Path p = quarter;
+    p.paint = Paint::filled(Color::rgba(255, 255, 255));
+    p.render(t);
+    CHECK(t.count(K::ClosePath) == 1);            // a pie is a closed region, and fillable
+    CHECK(t.count(K::FillPath) == 1);
+}
+TEST(Ellipse_sector_makes_a_pacman)
+{
+    // The mouth is the part NOT swept: keeping 30 -> 330 leaves a 60-degree mouth at 0.
+    const double deg = M_PI / 180.0;
+    const Path pac = ellipseArcPath(0, 0, 40, 40, 30 * deg, 300 * deg, 0.0);
+    const std::vector<Point> pts = pathPoints(pac);
+    CHECK(nearPoint(pts.front(), 0, 0));                                  // the mouth's corner
+    CHECK(nearPoint(pts[1], 40 * std::cos(30 * deg), 40 * std::sin(30 * deg)));
+    CHECK(nearPoint(pts.back(), 40 * std::cos(330 * deg), 40 * std::sin(330 * deg)));
+
+    // Every arc point is on the circle, and none lies inside the mouth.
+    for (size_t i = 1; i < pts.size(); ++i)
+    {
+        const double r = std::hypot(pts[i].x, pts[i].y);
+        CHECK_NEAR(r, 40.0, 0.5);
+        double a = std::atan2(pts[i].y, pts[i].x) / deg;
+        if (a < 0) a += 360.0;
+        CHECK(a >= 30.0 - 1.0);
+        CHECK(a <= 330.0 + 1.0);
+    }
+}
+TEST(Ellipse_sector_ring_and_annulus)
+{
+    // A ring segment: out along the outer arc, across, back along the inner one.
+    const Path ring = ellipseArcPath(0, 0, 50, 50, 0.0, M_PI, 0.6);
+    const std::vector<Point> pts = pathPoints(ring);
+    CHECK(nearPoint(pts.front(), 50, 0));
+    bool sawOuter = false, sawInner = false;
+    for (const auto &p : pts)
+    {
+        const double r = std::hypot(p.x, p.y);
+        if (std::fabs(r - 50.0) < 0.5) sawOuter = true;
+        if (std::fabs(r - 30.0) < 0.5) sawInner = true;
+    }
+    CHECK(sawOuter);
+    CHECK(sawInner);
+
+    // A full sweep with a hole is an annulus: two contours, wound opposite ways so nonzero
+    // winding leaves the middle empty.
+    Path donut = ellipseArcPath(0, 0, 50, 50, 0.0, 2.0 * M_PI, 0.5);
+    donut.paint = Paint::filled(Color::rgba(255, 255, 255));
+    RecordingTarget t;
+    donut.render(t);
+    CHECK(t.count(K::MoveTo) == 2);
+    CHECK(t.count(K::ClosePath) == 2);
+}
+TEST(Ellipse_sector_full_sweep_and_empty_cases)
+{
+    const Path whole = ellipseArcPath(0, 0, 30, 20, 0.0, 2.0 * M_PI, 0.0);
+    CHECK_NEAR(whole.length(), ellipsePath(0, 0, 30, 20).length(), 0.5);   // the plain ellipse
+
+    CHECK(ellipseArcPath(0, 0, 30, 30, 0.0, 0.0, 0.0).segmentCount() == 0);   // no sweep
+    CHECK(ellipseArcPath(0, 0, 0, 30, 0.0, M_PI, 0.0).segmentCount() == 0);   // no radius
+
+    // A negative sweep goes the other way round.
+    const std::vector<Point> back = pathPoints(ellipseArcPath(0, 0, 40, 40, 0.0, -M_PI / 2, 0.0));
+    CHECK(nearPoint(back.back(), 0, -40));
+}
+TEST(CircleSegment_arc_and_trim_compose)
+{
+    auto c = std::make_shared<CircleSegment>();
+    c->width.set(80);
+    c->height.set(80);
+    c->style.paint = Paint::filled(Color::rgba(255, 255, 255));
+
+    Arc none;
+    CHECK(!none.active());                        // the default describes the whole disk
+
+    RecordingTarget whole;
+    c->render(whole);
+    const int wholeCubics = whole.count(K::CubicTo);
+
+    const double deg = M_PI / 180.0;
+    c->arc.start = 30 * deg;
+    c->arc.sweep = 300 * deg;
+    CHECK(c->arc.active());
+    RecordingTarget pac;
+    c->render(pac);
+    CHECK(pac.count(K::LineTo) == 1);             // the ray out to the arc: the mouth's edge
+    CHECK(pac.count(K::ClosePath) == 1);
+    CHECK(pac.count(K::FillPath) == 1);
+
+    // Arc picks the geometry; trim then says how much of ITS outline is drawn.
+    c->trim.end = 0.5;
+    RecordingTarget both;
+    c->render(both);
+    CHECK(both.count(K::ClosePath) == 0);         // trimmed: open
+    CHECK(both.count(K::CubicTo) <= wholeCubics);
+    CHECK(both.count(K::FillPath) == 1);
 }
 
 // ───────────────────────── widgets ─────────────────────────

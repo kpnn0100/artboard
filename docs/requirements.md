@@ -734,6 +734,33 @@ implementation of their outlines; both drawing helpers shall be defined in terms
 `CircleSegment`, `RectangleSegment`, and `PathSegment` shall carry a `Trim` (start / end /
 offset) applied when they paint, so trimming is available wherever a path is drawn.
 
+### FR-43 Ellipse sector (pie, ring, arc)
+
+FR-42 trims an OUTLINE — it answers "how much of the stroke is drawn". A different question
+is "what part of the DISK is this": a wedge cut by two rays from the centre. A circle kept
+from 30° to 330° is a pac-man; kept from 0° to 90° it is a quarter pie; the same range with a
+hollow centre is a ring segment. That is a matter of geometry, not of stroke coverage, so it
+is its own primitive.
+
+`ellipseArcPath(cx, cy, rx, ry, startRad, sweepRad, innerRatio)` shall return the sector as a
+`Path`:
+
+- Angles are radians, `0` along `+x`, increasing toward `+y` (clockwise on screen, where y
+  grows downward). `sweepRad` may be negative to sweep the other way.
+- `innerRatio == 0` gives a **pie**: centre → arc → back to centre, closed. `innerRatio > 0`
+  gives a **ring segment** of that fraction of the radius: outer arc, across, inner arc back,
+  closed.
+- A sweep of a full turn or more gives the plain ellipse (`innerRatio == 0`) or an annulus
+  (`innerRatio > 0`), the latter as two contours wound in opposite directions so nonzero
+  winding leaves the hole empty.
+- A sweep of zero returns an empty path.
+- Arcs shall be built from cubic segments spanning at most 90° each, using the standard
+  `4/3·tan(Δ/4)` tangent scale, so the curve is accurate at any radius and no new HAL
+  primitive is needed.
+
+`CircleSegment` shall carry an `Arc` (start / sweep / innerRatio) applied when it paints, so
+a pie, a ring, or a pac-man is a property of the node rather than a hand-built path.
+
 ## 4. Non-functional Requirements
 
 ### NFR-1 Platform independence

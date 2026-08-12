@@ -194,10 +194,18 @@ namespace artboard
         // instead of spilling past it (the box also clips, as a backstop).
         const double visible = std::max(0.0, width.value() - padding * 2.0);
         const double caretX = textWidthTo(mCaret_);
-        if (!hasFocus())
-            mScrollX = 0.0;   // an unfocused field reads from its start, not from the caret
-        if (caretX - mScrollX > visible) mScrollX = caretX - visible;
-        if (caretX - mScrollX < 0.0) mScrollX = caretX;
+        if (hasFocus())
+        {
+            // Follow the caret by the smallest shift that brings it back inside the field.
+            if (caretX - mScrollX > visible) mScrollX = caretX - visible;
+            if (caretX - mScrollX < 0.0) mScrollX = caretX;
+        }
+        else
+        {
+            // An unfocused field reads from its START. It must not keep following a caret
+            // that is not there — a column of values would all show their tail ends.
+            mScrollX = 0.0;
+        }
         const double fullW = textWidthTo((int)text.size());
         mScrollX = std::max(0.0, std::min(mScrollX, std::max(0.0, fullW - visible)));
 

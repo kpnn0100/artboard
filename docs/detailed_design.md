@@ -353,6 +353,27 @@ emit, and those two now build and emit a `Path` rather than duplicating the geom
 shape a trim operates on is the same shape that gets drawn. `CircleSegment`,
 `RectangleSegment` and `PathSegment` each carry a `Trim` and apply it in `onPaint`.
 
+## 2o. Ellipse sector (FR-43)
+
+`Trim` and `Arc` answer different questions and are deliberately separate types: `Trim` is
+"how much of the OUTLINE is drawn" (a stroke that draws itself in); `Arc` is "which part of
+the DISK this is" (a pie, a ring, a pac-man). `CircleSegment` applies `Arc` first to pick the
+geometry, then `Trim` to that geometry's outline, so the two compose rather than compete.
+
+`appendArc` emits the elliptical arc as cubics of at most 90 degrees each, with control points
+at `4/3*tan(delta/4)` along the parametric tangents `(-rx*sin(t), ry*cos(t))`. That is the
+standard approximation and it is accurate at any radius, which is why an arc needs no HAL
+primitive.
+
+`ellipseArcPath` then has three shapes:
+- **full sweep** — the plain ellipse; with `innerRatio > 0`, an annulus whose inner contour is
+  wound the OTHER way, so nonzero winding leaves the hole empty;
+- **pie** (`innerRatio == 0`) — centre, ray out, arc, close. The two straight edges are the
+  rays that make a pac-man's mouth;
+- **ring segment** — outer arc, across, inner arc back, close.
+
+A zero sweep or a zero radius returns an empty path rather than a degenerate one.
+
 ## 3. `InputController`
 
 `InputController` is an abstract behavior strategy.
