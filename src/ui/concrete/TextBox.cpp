@@ -182,6 +182,28 @@ namespace artboard
         return phase >= 0.0 ? phase < kBlinkMs : phase + kBlinkMs * 2.0 < kBlinkMs;
     }
 
+    void TextBox::resolvePendingPointer() const
+    {
+        if (mPending == Pending::None)
+            return;
+        auto self = const_cast<TextBox *>(this);
+        const int at = offsetAtX(mPendingX);
+        switch (mPending)
+        {
+        case Pending::Place: self->moveCaret(at, false); break;
+        case Pending::Extend: self->moveCaret(at, true); break;
+        case Pending::Word:
+        {
+            int from = 0, to = 0;
+            wordAt(at, from, to);
+            self->setSelection(from, to);
+            break;
+        }
+        case Pending::None: break;
+        }
+        mPending = Pending::None;
+    }
+
     int TextBox::offsetAtX(double localX) const
     {
         const double padding = 10.0;
@@ -229,26 +251,30 @@ namespace artboard
     {
         switch (g.type)
         {
+        // These only RECORD the pointer position: turning it into a caret offset needs
+        // measureText, which is valid during a render and not from an input callback.
         case Gesture::Type::Down:
             requestFocus();
             // Shift-press EXTENDS from the existing anchor; a plain press collapses.
-            moveCaret(offsetAtX(localPoint.x), g.shift);
+            mPending = g.shift ? Pending::Extend : Pending::Place;
+            mPendingX = localPoint.x;
+            resetBlink();
             return true;
 
         case Gesture::Type::DragStart:
         case Gesture::Type::Drag:
             // Dragging from the press extends continuously; the anchor stays where the press
             // put it, which is what makes a drag select a range rather than move the caret.
-            moveCaret(offsetAtX(localPoint.x), true);
+            mPending = Pending::Extend;
+            mPendingX = localPoint.x;
+            resetBlink();
             return true;
 
         case Gesture::Type::DoubleClick:
-        {
-            int from = 0, to = 0;
-            wordAt(offsetAtX(localPoint.x), from, to);
-            setSelection(from, to);
+            mPending = Pending::Word;
+            mPendingX = localPoint.x;
+            resetBlink();
             return true;
-        }
         default:
             break;
         }
@@ -352,6 +378,9 @@ namespace artboard
     void TextBox::syncVisuals() const
     {
         ensureVisualTree();
+        // A render is the only place text measurement is valid, so this is where a recorded
+        // click becomes a caret offset.
+        resolvePendingPointer();
         mBox->visible = drawsBuiltInVisuals;   // FR-41
         mLabel->visible = drawsBuiltInVisuals;
         mCaret->visible = drawsBuiltInVisuals;

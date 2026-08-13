@@ -801,6 +801,19 @@ a text cursor, not a block. It continues to fade with focus (FR-38).
 **Refinement to FR-38/FR-39:** the caret-follow scroll tracks the caret, which is the moving end
 of a selection, so extending a selection past either edge scrolls the field.
 
+**Where measurement is valid.** Turning a pointer position into a caret offset requires
+`IRenderTarget::measureText`, and a render target is only guaranteed to be usable *during a
+render*. A host's target commonly wraps a per-frame drawing context the windowing system owns
+and destroys when the frame ends (a GTK `cairo_t` is exactly this), while pointer events arrive
+BETWEEN frames — so measuring at event time reads a target that is no longer live, and the
+caret lands nowhere near the click.
+
+A control shall therefore not measure text from an input handler. `TextBox` records the pointer
+position and what it means (place / extend / select-word) and resolves it on the next render,
+where a live target exists. The caret still moves within the same frame the click is drawn in,
+because a click schedules a redraw; and the behaviour no longer depends on whether a host
+happens to keep its drawing context alive between frames.
+
 ## 4. Non-functional Requirements
 
 ### NFR-1 Platform independence

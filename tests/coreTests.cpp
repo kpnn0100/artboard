@@ -2184,12 +2184,18 @@ TEST(TextBox_press_places_the_caret_and_the_caret_is_drawn_there)
     RecordingTarget t;
     tb->render(t);   // gives the box a target to measure with
 
-    // RecordingTarget's estimate is 0.5em per glyph at 14px = 7px; padding is 10px.
-    tb->onGesture({Gesture::Type::Down, {10.0 + 7.0 * 2.0, 14}, {0, 0}, PointerButton::Left});
+    // RecordingTarget's estimate is 0.5em per glyph at 14px = 7px; padding is 10px. Each
+    // press is resolved by the render that follows it.
+    auto pressAt = [&](double x) {
+        tb->onGesture({Gesture::Type::Down, {x, 14}, {0, 0}, PointerButton::Left});
+        RecordingTarget r;
+        tb->render(r);
+    };
+    pressAt(10.0 + 7.0 * 2.0);
     CHECK(tb->caret() == 2);
-    tb->onGesture({Gesture::Type::Down, {10.0, 14}, {0, 0}, PointerButton::Left});
+    pressAt(10.0);
     CHECK(tb->caret() == 0);
-    tb->onGesture({Gesture::Type::Down, {500.0, 14}, {0, 0}, PointerButton::Left});
+    pressAt(500.0);
     CHECK(tb->caret() == 6);
 
     // The drawn caret follows the caret position, not the end of the text.
@@ -2805,11 +2811,21 @@ namespace
         k.text = s;
         tb.dispatchKey(k);
     }
+    /** A press, then the render that resolves it — measurement is only valid during a
+     *  render, so a click becomes a caret offset there (FR-44). */
     void press(TextBox &tb, double x, bool shift = false)
     {
         Gesture g{Gesture::Type::Down, {x, 14}, {0, 0}, PointerButton::Left};
         g.shift = shift;
         tb.onGesture(g);
+        RecordingTarget t;
+        tb.render(t);
+    }
+    void gestureThenRender(TextBox &tb, const Gesture &g)
+    {
+        tb.onGesture(g);
+        RecordingTarget t;
+        tb.render(t);
     }
     // RecordingTarget's estimate is 0.5em per glyph; at 14px that is 7px, and the field pads 10.
     double xOf(int chars) { return 10.0 + 7.0 * chars; }
@@ -2892,7 +2908,7 @@ TEST(TextBox_press_drag_and_double_click_select)
 
     // Dragging from the press extends: the anchor stays where the press put it.
     Gesture drag{Gesture::Type::Drag, {xOf(7), 14}, {xOf(2), 14}, PointerButton::Left};
-    tb->onGesture(drag);
+    gestureThenRender(*tb, drag);
     CHECK(tb->anchor() == 2);
     CHECK(tb->caret() == 7);
     CHECK(tb->selectedText() == "llo w");
@@ -2904,7 +2920,7 @@ TEST(TextBox_press_drag_and_double_click_select)
 
     // A double-click takes the word under the pointer.
     Gesture dbl{Gesture::Type::DoubleClick, {xOf(8), 14}, {0, 0}, PointerButton::Left};
-    tb->onGesture(dbl);
+    gestureThenRender(*tb, dbl);
     CHECK(tb->selectedText() == "world");
 
     // ...and in whitespace, the run of whitespace.
@@ -2912,8 +2928,35 @@ TEST(TextBox_press_drag_and_double_click_select)
     RecordingTarget t2;
     spaced->render(t2);
     Gesture dbl2{Gesture::Type::DoubleClick, {xOf(2), 14}, {0, 0}, PointerButton::Left};
-    spaced->onGesture(dbl2);
+    gestureThenRender(*spaced, dbl2);
     CHECK(spaced->selectedText() == "   ");
+}
+TEST(TextBox_click_is_resolved_at_render_not_at_event_time)
+{
+    /*  Turning a click into a caret offset needs measureText, and a render target is only
+     *  live DURING a render — a host's target usually wraps a per-frame drawing context the
+     *  window system destroys when the frame ends, while pointer events arrive between
+     *  frames. Measuring at event time therefore reads a dead target and the caret lands
+     *  nowhere near the click. The gesture records; the render resolves.
+     */
+    auto tb = field("hello world");
+    RecordingTarget first;
+    tb->render(first);
+    key(*tb, 36);                                   // Home
+    CHECK(tb->caret() == 0);
+
+    tb->onGesture({Gesture::Type::Down, {xOf(7), 14}, {0, 0}, PointerButton::Left});
+    CHECK(tb->caret() == 0);                        // recorded, not yet resolved
+
+    RecordingTarget resolved;
+    tb->render(resolved);
+    CHECK(tb->caret() == 7);                        // the render placed it
+
+    // Resolving is one-shot: a second render does not re-apply the old click.
+    key(*tb, 36);
+    RecordingTarget again;
+    tb->render(again);
+    CHECK(tb->caret() == 0);
 }
 TEST(TextBox_clipboard_copy_cut_paste)
 {

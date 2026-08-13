@@ -406,6 +406,25 @@ tests use to stay isolated from each other). `copy()`/`cut()` no-op on an empty 
 `cut()` and `paste()` are refused while `readOnly`, but `copy()` is not — reading is not
 mutation, the same rule FR-38 applies to caret movement.
 
+### Pointer to caret: resolved at render, not at event time
+
+`handleGesture` does not measure. A press, a drag, or a double-click records `mPendingX` and a
+`Pending` mode (Place / Extend / Word); `syncVisuals` — which runs inside `render()`, where a
+live target exists — calls `resolvePendingPointer()` and clears it.
+
+The reason is a lifetime, not a preference. Turning x into an offset needs
+`IRenderTarget::measureText`, and a host's target commonly wraps a per-frame drawing context
+the windowing system owns and destroys when the frame ends (GTK's `cairo_t` is exactly that),
+while pointer events arrive BETWEEN frames. Measuring from an input callback therefore reads a
+context that no longer exists: Cairo puts it in an error state, every prefix measures zero, and
+the caret lands nowhere near the click. Deferring makes the behaviour independent of whether a
+host keeps its context alive — and costs nothing visible, because a click already schedules the
+redraw that resolves it.
+
+`CairoTarget` users should clear the context after each frame (`setContext(nullptr)`) so a
+stale one cannot be reached at all; `measureText` then falls back to the base estimate rather
+than touching freed memory.
+
 ### Caret
 
 `mBlinkT0` is stamped by `resetBlink()`, which every caret move and every edit calls, so the

@@ -260,6 +260,12 @@ The `ui` module is split by role into two folders, **one class per file** for ma
   - `Observable<T>` (a single-source-of-truth value with change notification: several UI nodes
     bind one value via `observe()` so a toggle button and the panel it controls can't drift out
     of sync — FR-23),
+  - **Measurement has a lifetime.** `IRenderTarget` is only guaranteed usable *during* a
+    render: an adapter typically wraps a per-frame context the windowing system destroys when
+    the frame ends. A control that needs `measureText` in response to input must therefore
+    record the input and resolve it on the next render rather than measure in the event
+    handler — `TextBox` does this for click-to-place-caret (FR-44). Hosts should clear their
+    adapter's context after each frame so a stale one cannot be used.
   - `Clipboard` (FR-44): the text clipboard seam. The core cannot read a system clipboard —
     that would be an OS call — so it owns an in-process default and exposes
     `install(reader, writer)` for a host to bind the real one once at startup. It is

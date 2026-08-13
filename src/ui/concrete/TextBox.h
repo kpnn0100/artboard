@@ -87,8 +87,12 @@ namespace artboard
         int wordRight(int from) const;
         /** The run under `at`: word characters, or the run of separators when in whitespace. */
         void wordAt(int at, int &from, int &to) const;
-        /** The byte offset nearest a local x, on a codepoint boundary. */
+        /** The byte offset nearest a local x, on a codepoint boundary. Only meaningful while
+         *  a live render target is available — see `mPending`. */
         int offsetAtX(double localX) const;
+        /** Apply a pointer position recorded by handleGesture. Called from syncVisuals, i.e.
+         *  during a render, which is the only place text measurement is valid. */
+        void resolvePendingPointer() const;
         /** Move the caret; `extend` keeps the anchor (shift-select), else collapses. */
         void moveCaret(int to, bool extend);
         /** Restart the blink cycle showing — called by every move and every edit. */
@@ -99,6 +103,17 @@ namespace artboard
         int mCaret_ = 0;
         int mAnchor = 0;          // the fixed end of the selection (FR-44)
         double mBlinkT0 = 0.0;
+
+        /*  A pointer position waiting to become a caret offset.
+         *
+         *  Turning x into an offset needs measureText, and a render target is only live during
+         *  a render — a host's target usually wraps a per-frame context the window system
+         *  destroys when the frame ends, while pointer events arrive between frames. So the
+         *  gesture records what happened and the next render resolves it.
+         */
+        enum class Pending { None, Place, Extend, Word };
+        mutable Pending mPending = Pending::None;
+        mutable double mPendingX = 0.0;
         mutable double mScrollX = 0.0;   // horizontal text offset that keeps the caret visible (FR-39)
         mutable IRenderTarget *mMeasure = nullptr;  // last target seen, for accurate caret placement
         double mNowMs = 0.0;
