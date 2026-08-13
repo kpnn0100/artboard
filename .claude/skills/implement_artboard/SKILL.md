@@ -8,9 +8,17 @@ description: Use when implementing, changing, removing, or fixing ANY feature in
 The single workflow for changing this repo (Arstro **Artboard**). Nothing ships unless
 **doc, design, code, and tests move together**. Skipping a stage is the bug.
 
-This skill lives in `Artboard/.claude/skills/` and is symlinked into the umbrella
-(`arstro/.claude/skills/implement_artboard`). Always work **inside the `Artboard/` repo**;
+This skill lives in `core/Artboard/.claude/skills/` and is symlinked into the umbrella
+(`arstro/.claude/skills/implement_artboard`). Always work **inside the `core/Artboard/` repo**;
 paths below are relative to the Artboard repo root.
+
+Umbrella layout (as of the `apps/` + `core/` reorganisation): the Arstro core libraries live
+under `arstro/core/` — `core/Artboard/`, `core/DigitalSignalProcessing/`, `core/ImageProcessing/`
+— and the applications that consume them live under `arstro/apps/` (`apps/cosmo`, `apps/genesis`,
+`apps/pulsar`, `apps/launcher`, plus spec-stage `apps/solaris`, `apps/interstellar`). Small demos
+stay at `arstro/examples/`. When a change touches the `IRenderTarget` seam, the adapters to update
+are in this repo (`src/adapter/`), but the *consumers* to re-check are under `arstro/apps/` and
+`arstro/examples/`.
 
 ## 0. Orient (facts about this repo)
 
