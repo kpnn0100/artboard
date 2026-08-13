@@ -46,6 +46,9 @@ namespace artboard
         TextStyle text;
         TextStyle placeholder;
         Color caretColor = Color::rgba(255, 255, 255);
+        /** The selection band drawn behind the glyphs (FR-44). Translucent by default so the
+         *  text stays legible through it on any theme. */
+        Color selectionColor = Color{0.31, 0.49, 0.97, 0.38};
     };
 
     struct KnobStyle

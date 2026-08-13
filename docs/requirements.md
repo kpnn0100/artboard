@@ -14,7 +14,8 @@ The system covers:
 - Time-based animation through abstract properties.
 - Pointer and keyboard interaction through platform-free input abstractions.
 - Composite UI objects through `Segment`.
-- A baseline theme and basic controls: `Button`, `Slider`, `Checkbox`, and `TextBox`.
+- A baseline theme and basic controls: `Button`, `Slider`, `Checkbox`, and `TextBox` (with
+  selection, clipboard, and a blinking caret).
 - Authorable bases for custom animated components: `VisualLoop` (indeterminate lifecycle) and
   `ProgressIndicator` (determinate state), plus protected signal hooks on the basic controls.
 - A rectangular and path clip primitive on the render HAL, and clip-to-bounds for segments.
@@ -760,6 +761,45 @@ is its own primitive.
 
 `CircleSegment` shall carry an `Arc` (start / sweep / innerRatio) applied when it paints, so
 a pie, a ring, or a pac-man is a property of the node rather than a hand-built path.
+
+### FR-44 Text selection, clipboard, and caret blink
+
+`TextBox` shall behave as a single-line text field is expected to, not merely as a place
+characters accumulate.
+
+**Selection.** The field shall hold an ANCHOR alongside the caret; the selection is the range
+between them, empty when they coincide. `selectedText()`, `selectAll()`, `clearSelection()`,
+and `setSelection(anchor, caret)` shall be public, and both ends shall always sit on UTF-8
+codepoint boundaries.
+
+- A press places the caret and collapses the selection; **shift**-press extends from the
+  existing anchor instead.
+- Dragging from a press extends the selection continuously.
+- A double-click selects the **word** under the pointer; a word is a run of letters, digits,
+  or `_`, and a double-click on a run of spaces selects that run.
+- Shift + Left/Right/Home/End extends; the same keys without shift collapse the selection to
+  the corresponding edge rather than moving from it — which is what makes an arrow key after a
+  drag land where a user expects.
+- Ctrl + Left/Right moves by whole words. Ctrl+A selects all.
+
+**Editing with a selection.** Typing, pasting, Backspace, and Delete shall all replace a
+non-empty selection. Backspace and Delete with an empty selection remove one codepoint on the
+respective side; with Ctrl held they remove a whole word.
+
+**Clipboard.** Ctrl+C copies, Ctrl+X cuts, Ctrl+V pastes. Because the core is platform-free it
+shall not read a system clipboard directly: `Clipboard` is a seam with an in-process default
+(so tests and headless builds work unchanged) and an `install(reader, writer)` a host calls
+once to bind the real one. Copy and cut on an empty selection shall do nothing; cut and paste
+shall be refused when `readOnly`, while copy shall still work.
+
+**The caret.** The caret shall **blink** — `kBlinkMs` on, `kBlinkMs` off — and any caret
+movement or edit shall restart the cycle showing, so the caret is never invisible at the moment
+it moves. Under `reducedMotion()` it shall be steady rather than blinking: a blinking caret is
+motion. It shall be drawn **1px wide and about 1.25× the text size tall**, vertically centred —
+a text cursor, not a block. It continues to fade with focus (FR-38).
+
+**Refinement to FR-38/FR-39:** the caret-follow scroll tracks the caret, which is the moving end
+of a selection, so extending a selection past either edge scrolls the field.
 
 ## 4. Non-functional Requirements
 

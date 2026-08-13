@@ -374,6 +374,57 @@ primitive.
 
 A zero sweep or a zero radius returns an empty path rather than a degenerate one.
 
+## 2p. `TextBox` selection, clipboard, blink (FR-44)
+
+### Selection
+
+The field holds `mAnchor` beside `mCaret_`; the selection is `[min, max)` of the two and is
+empty when they coincide. Every mutation routes through two helpers so no path can forget the
+selection: `deleteSelection()` (erase the range, caret and anchor to its start) and
+`insertText()` (delete any selection, then insert at the caret). Typing, paste, Backspace and
+Delete are all written in terms of them.
+
+`setSelection(anchor, caret)` clamps both onto codepoint boundaries via the same `setCaret`
+walk, so no operation can leave either end mid-glyph.
+
+Arrow keys distinguish two cases deliberately: with **shift** they move the caret and leave the
+anchor, extending; **without** shift and with a selection present they COLLAPSE to the
+corresponding edge rather than moving from the caret — which is what makes pressing Left after
+a drag land at the selection's start rather than one character in from wherever the drag ended.
+
+`wordLeft`/`wordRight` skip a run of separators and then a run of word characters (letters,
+digits, `_`), which gives Ctrl+Arrow, Ctrl+Backspace and Ctrl+Delete one shared definition of
+"word". `wordAt` returns the run under a byte offset — a run of word characters, or the run of
+separators if the offset is in whitespace — and is what a double-click selects.
+
+### Clipboard
+
+`Clipboard` holds a `Reader`/`Writer` pair in a function-local static. The default pair reads
+and writes an in-process string, so copy/paste works in tests and headless builds with no host
+involvement; `install()` swaps in the real one and `reset()` restores the default (which the
+tests use to stay isolated from each other). `copy()`/`cut()` no-op on an empty selection;
+`cut()` and `paste()` are refused while `readOnly`, but `copy()` is not — reading is not
+mutation, the same rule FR-38 applies to caret movement.
+
+### Caret
+
+`mBlinkT0` is stamped by `resetBlink()`, which every caret move and every edit calls, so the
+caret is always solid at the instant it moves rather than possibly mid-dark-phase. Visibility is
+`fmod(now - t0, 2*kBlinkMs) < kBlinkMs`, and under `reducedMotion()` it is simply true — a
+blinking caret is motion, and the accessibility switch turns motion off rather than speeding it
+up. The blink multiplies the focus factor (FR-38) rather than replacing it, so a caret still
+fades in with focus and then begins to blink.
+
+Geometry: 1px wide, `1.25 x` the text size tall, vertically centred — a text cursor rather than
+the earlier block.
+
+### Visual tree
+
+`box -> selection -> label -> caret`, so the highlight sits behind the glyphs and the caret in
+front of them. The selection node is one rectangle (the field is single-line) spanning
+`textWidthTo(start)..textWidthTo(end)` in the same scrolled frame as the label, and is hidden
+when the selection is empty or the field is unfocused.
+
 ## 3. `InputController`
 
 `InputController` is an abstract behavior strategy.

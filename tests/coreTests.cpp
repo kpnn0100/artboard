@@ -2772,6 +2772,363 @@ TEST(CircleSegment_arc_and_trim_compose)
     CHECK(both.count(K::FillPath) == 1);
 }
 
+
+// ───────────────────────── FR-44 selection, clipboard, blink ─────────────────────────
+namespace
+{
+    /** A focused field with `value` in it and the caret at the end. */
+    std::shared_ptr<TextBox> field(const std::string &value, double w = 200.0)
+    {
+        auto tb = std::make_shared<TextBox>();
+        tb->width.set(w);
+        tb->height.set(28);
+        tb->focusable = true;
+        tb->requestFocus();
+        tb->text = value;
+        tb->caretToEnd();
+        tb->clearSelection();
+        return tb;
+    }
+    void key(TextBox &tb, int code, bool shift = false, bool ctrl = false)
+    {
+        KeyEvent k;
+        k.type = KeyEvent::Type::Down;
+        k.keyCode = code;
+        k.shift = shift;
+        k.ctrl = ctrl;
+        tb.dispatchKey(k);
+    }
+    void type(TextBox &tb, const std::string &s)
+    {
+        KeyEvent k;
+        k.type = KeyEvent::Type::Text;
+        k.text = s;
+        tb.dispatchKey(k);
+    }
+    void press(TextBox &tb, double x, bool shift = false)
+    {
+        Gesture g{Gesture::Type::Down, {x, 14}, {0, 0}, PointerButton::Left};
+        g.shift = shift;
+        tb.onGesture(g);
+    }
+    // RecordingTarget's estimate is 0.5em per glyph; at 14px that is 7px, and the field pads 10.
+    double xOf(int chars) { return 10.0 + 7.0 * chars; }
+}
+
+TEST(TextBox_selection_by_shift_keys_and_replacement)
+{
+    auto tb = field("hello world");
+    CHECK(!tb->hasSelection());
+    CHECK(tb->selectedText().empty());
+
+    key(*tb, 36);                                  // Home
+    key(*tb, 39, /*shift*/ true);                  // shift+Right x5
+    for (int i = 0; i < 4; ++i) key(*tb, 39, true);
+    CHECK(tb->selectionStart() == 0);
+    CHECK(tb->selectionEnd() == 5);
+    CHECK(tb->selectedText() == "hello");
+
+    type(*tb, "HI");                               // typing REPLACES the selection
+    CHECK(tb->text == "HI world");
+    CHECK(!tb->hasSelection());
+    CHECK(tb->caret() == 2);
+
+    tb->selectAll();
+    CHECK(tb->selectedText() == "HI world");
+    key(*tb, 8);                                   // backspace deletes the selection
+    CHECK(tb->text.empty());
+    CHECK(tb->caret() == 0);
+}
+TEST(TextBox_arrow_without_shift_collapses_to_the_selection_edge)
+{
+    // Pressing Left after a drag must land at the selection's START, not one in from wherever
+    // the drag happened to end.
+    auto tb = field("abcdef");
+    tb->setSelection(2, 5);
+    CHECK(tb->selectionStart() == 2);
+    CHECK(tb->selectionEnd() == 5);
+    key(*tb, 37);                                  // Left
+    CHECK(tb->caret() == 2);
+    CHECK(!tb->hasSelection());
+
+    tb->setSelection(2, 5);
+    key(*tb, 39);                                  // Right
+    CHECK(tb->caret() == 5);
+    CHECK(!tb->hasSelection());
+}
+TEST(TextBox_word_motion_and_word_delete)
+{
+    auto tb = field("alpha beta gamma");
+    key(*tb, 36);                                  // Home
+    key(*tb, 39, false, /*ctrl*/ true);
+    CHECK(tb->caret() == 5);                       // end of "alpha"
+    key(*tb, 39, false, true);
+    CHECK(tb->caret() == 10);                      // end of "beta"
+    key(*tb, 37, false, true);
+    CHECK(tb->caret() == 6);                       // start of "beta"
+
+    key(*tb, 35);                                  // End
+    key(*tb, 8, false, true);                      // ctrl+backspace eats "gamma"
+    CHECK(tb->text == "alpha beta ");
+    key(*tb, 36);
+    key(*tb, 46, false, true);                     // ctrl+delete eats "alpha"
+    CHECK(tb->text == " beta ");
+
+    // shift+ctrl extends by words.
+    auto tb2 = field("one two three");
+    key(*tb2, 36);
+    key(*tb2, 39, true, true);
+    CHECK(tb2->selectedText() == "one");
+}
+TEST(TextBox_press_drag_and_double_click_select)
+{
+    auto tb = field("hello world");
+    RecordingTarget t;
+    tb->render(t);                                 // gives the field a target to measure with
+
+    press(*tb, xOf(2));
+    CHECK(tb->caret() == 2);
+    CHECK(!tb->hasSelection());                    // a plain press collapses
+
+    // Dragging from the press extends: the anchor stays where the press put it.
+    Gesture drag{Gesture::Type::Drag, {xOf(7), 14}, {xOf(2), 14}, PointerButton::Left};
+    tb->onGesture(drag);
+    CHECK(tb->anchor() == 2);
+    CHECK(tb->caret() == 7);
+    CHECK(tb->selectedText() == "llo w");
+
+    // Shift-press extends from the existing anchor instead of collapsing.
+    press(*tb, xOf(9), /*shift*/ true);
+    CHECK(tb->anchor() == 2);
+    CHECK(tb->caret() == 9);
+
+    // A double-click takes the word under the pointer.
+    Gesture dbl{Gesture::Type::DoubleClick, {xOf(8), 14}, {0, 0}, PointerButton::Left};
+    tb->onGesture(dbl);
+    CHECK(tb->selectedText() == "world");
+
+    // ...and in whitespace, the run of whitespace.
+    auto spaced = field("a   b");
+    RecordingTarget t2;
+    spaced->render(t2);
+    Gesture dbl2{Gesture::Type::DoubleClick, {xOf(2), 14}, {0, 0}, PointerButton::Left};
+    spaced->onGesture(dbl2);
+    CHECK(spaced->selectedText() == "   ");
+}
+TEST(TextBox_clipboard_copy_cut_paste)
+{
+    Clipboard::reset();
+    auto tb = field("copy me please");
+    tb->setSelection(0, 7);
+    CHECK(tb->selectedText() == "copy me");
+
+    key(*tb, 67, false, /*ctrl*/ true);             // ctrl+C
+    CHECK(Clipboard::read() == "copy me");
+    CHECK(tb->text == "copy me please");            // copy does not mutate
+
+    key(*tb, 35);                                   // End
+    key(*tb, 86, false, true);                      // ctrl+V
+    CHECK(tb->text == "copy me pleasecopy me");
+
+    tb->setSelection(0, 4);
+    key(*tb, 88, false, true);                      // ctrl+X
+    CHECK(Clipboard::read() == "copy");
+    CHECK(tb->text == " me pleasecopy me");
+    CHECK(!tb->hasSelection());
+
+    key(*tb, 65, false, true);                      // ctrl+A
+    CHECK(tb->selectionStart() == 0);
+    CHECK(tb->selectionEnd() == (int)tb->text.size());
+    Clipboard::reset();
+}
+TEST(TextBox_clipboard_respects_read_only_but_still_copies)
+{
+    Clipboard::reset();
+    Clipboard::write("payload");
+    auto tb = field("locked");
+    tb->readOnly = true;
+    tb->selectAll();
+
+    key(*tb, 86, false, true);                      // paste is refused
+    CHECK(tb->text == "locked");
+    key(*tb, 88, false, true);                      // cut is refused
+    CHECK(tb->text == "locked");
+    CHECK(Clipboard::read() == "payload");
+
+    key(*tb, 67, false, true);                      // copy is NOT: reading is not mutating
+    CHECK(Clipboard::read() == "locked");
+    Clipboard::reset();
+}
+TEST(Clipboard_host_can_install_its_own)
+{
+    Clipboard::reset();
+    std::string hosted;
+    Clipboard::install([&hosted] { return hosted; }, [&hosted](const std::string &s) { hosted = s; });
+    Clipboard::write("via the host");
+    CHECK(hosted == "via the host");
+    CHECK(Clipboard::read() == "via the host");
+    Clipboard::reset();
+    CHECK(Clipboard::read().empty());               // back to the in-process default
+}
+TEST(TextBox_caret_blinks_and_restarts_showing_on_every_move)
+{
+    setReducedMotion(false);
+    auto tb = field("blink");
+    // The caret node is the last child; render() is what decides whether it shows this frame.
+    auto caretShown = [&](double nowMs) {
+        tb->advance(nowMs);
+        RecordingTarget t;
+        tb->render(t);
+        return tb->children().back()->visible;
+    };
+
+    tb->advance(0.0);
+    CHECK(caretShown(200.0));                                   // first half of the cycle
+    CHECK(!caretShown(200.0 + TextBox::kBlinkMs));              // second half: dark
+    CHECK(caretShown(200.0 + TextBox::kBlinkMs * 2.0));         // and back
+
+    // Any move restarts the cycle SHOWING, so the caret is never dark as it moves.
+    tb->advance(200.0 + TextBox::kBlinkMs);                     // sit in the dark phase
+    key(*tb, 37);                                               // Left
+    CHECK(caretShown(200.0 + TextBox::kBlinkMs + 1.0));
+
+    // An edit restarts it too.
+    tb->advance(2000.0 + TextBox::kBlinkMs);
+    type(*tb, "x");
+    CHECK(caretShown(2000.0 + TextBox::kBlinkMs + 1.0));
+
+    // Reduced motion keeps it steady: a blinking caret is motion.
+    setReducedMotion(true);
+    CHECK(caretShown(9000.0));
+    CHECK(caretShown(9000.0 + TextBox::kBlinkMs));
+    setReducedMotion(false);
+}
+TEST(TextBox_caret_is_thin_and_tall_and_the_selection_sits_behind_the_glyphs)
+{
+    auto tb = field("selection");
+    tb->advance(0.0);
+    tb->advance(600.0);
+    tb->setSelection(2, 6);
+
+    RecordingTarget t;
+    tb->render(t);
+    // The band is drawn BEFORE the text (behind it), and the caret after (in front).
+    int bandAt = -1, textAt = -1, caretAt = -1;
+    for (int i = 0; i < (int)t.ops().size(); ++i)
+    {
+        if (t.ops()[(size_t)i].kind == K::DrawText) textAt = i;
+        else if (t.ops()[(size_t)i].kind == K::FillPath)
+        {
+            if (textAt < 0 && bandAt < 0) bandAt = i;   // the box, then the band
+            else if (textAt >= 0) caretAt = i;
+        }
+    }
+    CHECK(textAt > 0);
+    CHECK(caretAt > textAt);
+
+    // Caret geometry: 1px wide and taller than the text size (FR-44), centred.
+    const double caretH = tb->height.value();
+    CHECK(caretH > 0.0);
+    auto seg = std::dynamic_pointer_cast<Segment>(tb->children().back());
+    CHECK(seg != nullptr);
+    CHECK_NEAR(seg->width.value(), 1.0, 1e-9);
+    CHECK(seg->height.value() > 14.0);
+    CHECK(seg->height.value() < tb->height.value());
+    CHECK_NEAR(seg->y.value(), (tb->height.value() - seg->height.value()) * 0.5, 1e-9);
+}
+TEST(TextBox_selection_is_hidden_when_empty_or_unfocused)
+{
+    auto tb = field("abcdef");
+    tb->advance(0.0);
+    tb->advance(600.0);
+    RecordingTarget none;
+    tb->render(none);                            // the visual tree is built on first render
+    // The band is the second child (box, band, label, caret) — behind the glyphs.
+    CHECK(tb->childCount() == 4);
+    auto band = tb->children()[1];
+    CHECK(!band->visible);                       // no selection: nothing to highlight
+
+    tb->setSelection(1, 4);
+    RecordingTarget some;
+    tb->render(some);
+    CHECK(band->visible);
+    CHECK(band->width.value() > 0.0);
+
+    {
+        auto other = std::make_shared<TextBox>();
+        other->focusable = true;
+        other->requestFocus();                   // steal focus
+    }
+    CHECK(!tb->hasFocus());
+    RecordingTarget blurred;
+    tb->render(blurred);
+    CHECK(!band->visible);                       // an unfocused field shows no selection
+}
+TEST(TextBox_selection_ends_stay_on_codepoint_boundaries)
+{
+    auto tb = field("a\xc3\xa9" "b");                      // a, e-acute (2 bytes), b
+    tb->setSelection(1, 3);
+    CHECK(tb->selectedText() == "\xc3\xa9");
+    tb->setSelection(2, 2);                                // mid-codepoint: walked back
+    CHECK(tb->anchor() == 1);
+    CHECK(tb->caret() == 1);
+    tb->setSelection(-5, 99);                              // clamped
+    CHECK(tb->selectionStart() == 0);
+    CHECK(tb->selectionEnd() == (int)tb->text.size());
+}
+TEST(TextBox_setCaret_collapses_so_no_phantom_selection_survives)
+{
+    // Leaving a stale anchor behind would mean the next Backspace silently deleted a range
+    // the user never selected — which is exactly what caretToEnd() used to do.
+    auto tb = field("minSide * 0.7");
+    tb->setSelection(0, 7);
+    CHECK(tb->hasSelection());
+    tb->caretToEnd();
+    CHECK(!tb->hasSelection());
+    CHECK(tb->caret() == (int)tb->text.size());
+
+    key(*tb, 8);                                   // one backspace removes ONE character
+    CHECK(tb->text == "minSide * 0.");
+
+    tb->setSelection(0, 3);
+    tb->setCaret(5);
+    CHECK(!tb->hasSelection());
+    CHECK(tb->caret() == 5);
+}
+TEST(TextBox_programmatic_text_change_keeps_a_live_selection)
+{
+    auto tb = field("abcdef");
+    tb->setSelection(1, 4);
+    tb->text = "abcdef!";                          // assigned from outside
+    key(*tb, 39, /*shift*/ true);                  // the selection is re-normalised, not dropped
+    CHECK(tb->anchor() == 1);
+    CHECK(tb->caret() == 5);
+}
+TEST(TextBox_insert_and_delete_helpers_are_the_one_mutation_path)
+{
+    auto tb = field("abc");
+    tb->setSelection(0, 3);
+    tb->insertText("X");                                   // replaces the selection
+    CHECK(tb->text == "X");
+    tb->insertText("YZ");
+    CHECK(tb->text == "XYZ");
+    CHECK(tb->caret() == 3);
+
+    tb->setSelection(1, 3);
+    tb->deleteSelection();
+    CHECK(tb->text == "X");
+    CHECK(tb->caret() == 1);
+    tb->deleteSelection();                                 // empty selection: no-op
+    CHECK(tb->text == "X");
+
+    tb->readOnly = true;
+    tb->insertText("nope");
+    CHECK(tb->text == "X");
+    tb->selectAll();
+    tb->deleteSelection();
+    CHECK(tb->text == "X");
+}
+
 // ───────────────────────── widgets ─────────────────────────
 TEST(Knob_drag_keys_and_render)
 {

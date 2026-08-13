@@ -1,5 +1,8 @@
 #include "TextBox.h"
 #include <cmath>
+#include "../base/Clipboard.h"
+#include "../../anim/Motion.h"
+#include <algorithm>
 #include "../base/Interaction.h"
 
 namespace artboard
@@ -28,14 +31,22 @@ namespace artboard
 
     // ---- caret (FR-38) ----
 
-    void TextBox::setCaret(int byteOffset)
+    int TextBox::boundary(int byteOffset) const
     {
         const int n = (int)text.size();
         int c = byteOffset < 0 ? 0 : (byteOffset > n ? n : byteOffset);
         // Never land inside a multi-byte codepoint.
         while (c > 0 && c < n && ((unsigned char)text[(size_t)c] & 0xC0) == 0x80)
             --c;
-        mCaret_ = c;
+        return c;
+    }
+
+    void TextBox::setCaret(int byteOffset)
+    {
+        // Placing the caret COLLAPSES the selection — leaving a stale anchor behind would mean
+        // the next Backspace silently deleted a range the user never selected.
+        mCaret_ = mAnchor = boundary(byteOffset);
+        resetBlink();
     }
 
     int TextBox::stepLeft(int from) const
@@ -53,6 +64,142 @@ namespace artboard
         while (c < n && ((unsigned char)text[(size_t)c] & 0xC0) == 0x80)
             ++c;
         return c > n ? n : c;
+    }
+
+    // ---- selection (FR-44) ----
+
+    void TextBox::setSelection(int anchorByte, int caretByte)
+    {
+        mAnchor = boundary(anchorByte);   // the same normalisation for BOTH ends
+        mCaret_ = boundary(caretByte);
+        resetBlink();
+    }
+
+    void TextBox::selectAll() { setSelection(0, (int)text.size()); }
+
+    std::string TextBox::selectedText() const
+    {
+        return text.substr((size_t)selectionStart(), (size_t)(selectionEnd() - selectionStart()));
+    }
+
+    void TextBox::deleteSelection()
+    {
+        if (!hasSelection() || readOnly)
+            return;
+        const int from = selectionStart();
+        text.erase((size_t)from, (size_t)(selectionEnd() - from));
+        mCaret_ = mAnchor = from;
+        resetBlink();
+    }
+
+    void TextBox::insertText(const std::string &s)
+    {
+        if (readOnly)
+            return;
+        deleteSelection();
+        text.insert((size_t)mCaret_, s);
+        mCaret_ = mAnchor = boundary(mCaret_ + (int)s.size());
+        resetBlink();
+    }
+
+    void TextBox::moveCaret(int to, bool extend)
+    {
+        mCaret_ = boundary(to);
+        if (!extend)
+            mAnchor = mCaret_;   // a plain move collapses; shift keeps the anchor
+        resetBlink();
+    }
+
+    // ---- clipboard (FR-44) ----
+
+    void TextBox::copy() const
+    {
+        if (hasSelection())                 // reading is not mutation: allowed while readOnly
+            Clipboard::write(selectedText());
+    }
+
+    void TextBox::cut()
+    {
+        if (readOnly || !hasSelection())
+            return;
+        Clipboard::write(selectedText());
+        deleteSelection();
+    }
+
+    void TextBox::paste()
+    {
+        const std::string s = Clipboard::read();
+        if (!s.empty())
+            insertText(s);
+    }
+
+    // ---- words: one definition, shared by Ctrl+Arrow, Ctrl+Delete and double-click ----
+
+    namespace
+    {
+        bool isWordByte(unsigned char c)
+        {
+            return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+                   c == '_' || c >= 0x80;   // treat multi-byte codepoints as word content
+        }
+    }
+
+    int TextBox::wordLeft(int from) const
+    {
+        int i = from;
+        while (i > 0 && !isWordByte((unsigned char)text[(size_t)(i - 1)])) --i;
+        while (i > 0 && isWordByte((unsigned char)text[(size_t)(i - 1)])) --i;
+        return i;
+    }
+
+    int TextBox::wordRight(int from) const
+    {
+        const int n = (int)text.size();
+        int i = from;
+        while (i < n && !isWordByte((unsigned char)text[(size_t)i])) ++i;
+        while (i < n && isWordByte((unsigned char)text[(size_t)i])) ++i;
+        return i;
+    }
+
+    void TextBox::wordAt(int at, int &from, int &to) const
+    {
+        const int n = (int)text.size();
+        if (n == 0) { from = to = 0; return; }
+        int i = at >= n ? n - 1 : at;
+        // In whitespace, select the run of whitespace; otherwise the run of word characters.
+        const bool word = isWordByte((unsigned char)text[(size_t)i]);
+        from = i;
+        to = i;
+        while (from > 0 && isWordByte((unsigned char)text[(size_t)(from - 1)]) == word) --from;
+        while (to < n && isWordByte((unsigned char)text[(size_t)to]) == word) ++to;
+    }
+
+    bool TextBox::caretVisible() const
+    {
+        if (reducedMotion())
+            return true;   // a blinking caret is motion; the switch turns motion off
+        const double phase = std::fmod(mNowMs - mBlinkT0, kBlinkMs * 2.0);
+        return phase >= 0.0 ? phase < kBlinkMs : phase + kBlinkMs * 2.0 < kBlinkMs;
+    }
+
+    int TextBox::offsetAtX(double localX) const
+    {
+        const double padding = 10.0;
+        const double target = localX - padding + mScrollX;
+        int best = 0;
+        double bestDist = -1.0;
+        for (int b = 0;; b = stepRight(b))
+        {
+            const double d = std::fabs(textWidthTo(b) - target);
+            if (bestDist < 0.0 || d < bestDist)
+            {
+                bestDist = d;
+                best = b;
+            }
+            if (b >= (int)text.size())
+                break;
+        }
+        return best;
     }
 
     double TextBox::textWidthTo(int bytes) const
@@ -80,70 +227,102 @@ namespace artboard
 
     bool TextBox::handleGesture(const Gesture &g, const Point &localPoint)
     {
-        if (g.type == Gesture::Type::Down)
+        switch (g.type)
         {
+        case Gesture::Type::Down:
             requestFocus();
-            // Place the caret at the inter-character boundary nearest the pointer, measured
-            // with the adapter's own metrics so it lands where the glyphs really are (FR-38).
-            const double padding = 10.0;
-            const double target = localPoint.x - padding;
-            int best = 0;
-            double bestDist = -1.0;
-            for (int b = 0; b <= (int)text.size(); b = (b == (int)text.size()) ? b + 1 : stepRight(b))
-            {
-                if (b > (int)text.size())
-                    break;
-                const double d = std::fabs(textWidthTo(b) - target);
-                if (bestDist < 0.0 || d < bestDist)
-                {
-                    bestDist = d;
-                    best = b;
-                }
-                if (b == (int)text.size())
-                    break;
-            }
-            setCaret(best);
+            // Shift-press EXTENDS from the existing anchor; a plain press collapses.
+            moveCaret(offsetAtX(localPoint.x), g.shift);
             return true;
+
+        case Gesture::Type::DragStart:
+        case Gesture::Type::Drag:
+            // Dragging from the press extends continuously; the anchor stays where the press
+            // put it, which is what makes a drag select a range rather than move the caret.
+            moveCaret(offsetAtX(localPoint.x), true);
+            return true;
+
+        case Gesture::Type::DoubleClick:
+        {
+            int from = 0, to = 0;
+            wordAt(offsetAtX(localPoint.x), from, to);
+            setSelection(from, to);
+            return true;
+        }
+        default:
+            break;
         }
         return Segment::handleGesture(g, localPoint);
     }
 
     bool TextBox::handleKey(const KeyEvent &event)
     {
-        setCaret(mCaret_);   // `text` may have been assigned from outside since the last key
+        // `text` may have been assigned from outside since the last key: re-normalise BOTH
+        // ends without collapsing, or a programmatic edit would drop the user's selection.
+        mCaret_ = boundary(mCaret_);
+        mAnchor = boundary(mAnchor);
 
-        // Caret movement works even when read-only: a value can be inspected without
-        // being changed (FR-38).
         if (event.type == KeyEvent::Type::Down)
         {
+            // Motion and copy work while readOnly: inspecting is not mutating (FR-38).
             switch (event.keyCode)
             {
-            case 37: setCaret(stepLeft(mCaret_)); return true;             // Left
-            case 39: setCaret(stepRight(mCaret_)); return true;            // Right
-            case 36: setCaret(0); return true;                             // Home
-            case 35: setCaret((int)text.size()); return true;              // End
-            default: break;
+            case 37:   // Left
+                moveCaret(event.ctrl ? wordLeft(mCaret_)
+                                     : (hasSelection() && !event.shift ? selectionStart()
+                                                                       : stepLeft(mCaret_)),
+                          event.shift);
+                return true;
+            case 39:   // Right
+                moveCaret(event.ctrl ? wordRight(mCaret_)
+                                     : (hasSelection() && !event.shift ? selectionEnd()
+                                                                       : stepRight(mCaret_)),
+                          event.shift);
+                return true;
+            case 36: moveCaret(0, event.shift); return true;                      // Home
+            case 35: moveCaret((int)text.size(), event.shift); return true;       // End
+            case 65:                                                              // A
+                if (event.ctrl) { selectAll(); return true; }
+                break;
+            case 67:                                                              // C
+                if (event.ctrl) { copy(); return true; }
+                break;
+            case 88:                                                              // X
+                if (event.ctrl) { cut(); return true; }
+                break;
+            case 86:                                                              // V
+                if (event.ctrl) { paste(); return true; }
+                break;
+            default:
+                break;
             }
         }
+
         if (readOnly)
             return false;
+
         if (event.type == KeyEvent::Type::Text && !event.text.empty())
         {
-            text.insert((size_t)mCaret_, event.text);
-            setCaret(mCaret_ + (int)event.text.size());
+            insertText(event.text);            // replaces the selection, if any
             return true;
         }
-        if (event.type == KeyEvent::Type::Down && event.keyCode == 8 && mCaret_ > 0)
+        if (event.type == KeyEvent::Type::Down && event.keyCode == 8)              // Backspace
         {
-            const int from = stepLeft(mCaret_);                            // Backspace
+            if (hasSelection()) { deleteSelection(); return true; }
+            if (mCaret_ == 0) return true;
+            const int from = event.ctrl ? wordLeft(mCaret_) : stepLeft(mCaret_);
             text.erase((size_t)from, (size_t)(mCaret_ - from));
-            setCaret(from);
+            mCaret_ = mAnchor = from;
+            resetBlink();
             return true;
         }
-        if (event.type == KeyEvent::Type::Down && event.keyCode == 46 && mCaret_ < (int)text.size())
+        if (event.type == KeyEvent::Type::Down && event.keyCode == 46)             // Delete
         {
-            const int to = stepRight(mCaret_);                             // Delete
+            if (hasSelection()) { deleteSelection(); return true; }
+            if (mCaret_ >= (int)text.size()) return true;
+            const int to = event.ctrl ? wordRight(mCaret_) : stepRight(mCaret_);
             text.erase((size_t)mCaret_, (size_t)(to - mCaret_));
+            resetBlink();
             return true;
         }
         return Segment::handleKey(event);
@@ -156,12 +335,16 @@ namespace artboard
 
         auto self = const_cast<TextBox *>(this);
         self->mBox = std::make_shared<RectangleSegment>();
+        self->mSelection = std::make_shared<RectangleSegment>();
         self->mLabel = std::make_shared<LabelSegment>();
         self->mCaret = std::make_shared<RectangleSegment>();
         self->mBox->inputTransparent = true;
+        self->mSelection->inputTransparent = true;
         self->mLabel->inputTransparent = true;
         self->mCaret->inputTransparent = true;
+        // Order is the z-order: the highlight sits BEHIND the glyphs, the caret in front.
         self->addChild(self->mBox);
+        self->addChild(self->mSelection);
         self->addChild(self->mLabel);
         self->addChild(self->mCaret);
     }
@@ -212,15 +395,35 @@ namespace artboard
         mLabel->x.set(padding - mScrollX);
         mLabel->y.set((height.value() - mLabel->style.sizePx) * 0.5 - 2.0);
 
+        // Selection band, behind the glyphs, in the same scrolled frame as the label.
+        const bool showSelection = hasSelection() && hasFocus();
+        mSelection->visible = showSelection;
+        if (showSelection)
+        {
+            const double x0 = textWidthTo(selectionStart()) - mScrollX;
+            const double x1 = textWidthTo(selectionEnd()) - mScrollX;
+            Color band = dimColor(mStyle.selectionColor, dim);
+            band.a *= fa;
+            mSelection->style = {Paint::filled(band), 0.0};
+            mSelection->x.set(padding + x0);
+            mSelection->y.set((height.value() - mStyle.text.sizePx * 1.35) * 0.5);
+            mSelection->width.set(std::max(0.0, x1 - x0));
+            mSelection->height.set(mStyle.text.sizePx * 1.35);
+        }
+
+        // A text cursor: 1px wide, ~1.25x the text size tall, vertically centred — and
+        // BLINKING, restarted showing by every move and every edit so it is never dark at the
+        // moment it moves (FR-44). Reduced motion keeps it steady.
         Color caret = dimColor(mStyle.caretColor, dim);
         caret.a *= fa;  // caret fades in with focus, out on blur
         mCaret->style = {Paint::filled(caret), 0.0};
-        mCaret->visible = fa > 0.01;
+        mCaret->visible = fa > 0.01 && caretVisible();
         // Drawn AT the caret position, not always at the end (FR-38), in the scrolled frame.
+        const double caretH = mStyle.text.sizePx * 1.25;
         mCaret->x.set(padding + caretX - mScrollX);
-        mCaret->y.set(8.0);
-        mCaret->width.set(2.0);
-        mCaret->height.set(height.value() - 16.0);
+        mCaret->y.set((height.value() - caretH) * 0.5);
+        mCaret->width.set(1.0);
+        mCaret->height.set(caretH);
     }
 
     double TextBox::estimateTextWidth(const std::string &value, double sizePx) const

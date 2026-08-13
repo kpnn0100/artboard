@@ -175,6 +175,15 @@ package ui {
   class Checkbox
   class TextBox {
     + caret() / setCaret(b) / caretToEnd()  ' FR-38 caret editing
+    + selectionStart() / selectionEnd() / selectedText()  ' FR-44
+    + setSelection(anchor, caret) / selectAll() / clearSelection()
+    + insertText(s) / deleteSelection()
+    + copy() / cut() / paste()
+  }
+  class Clipboard <<seam>> {
+    + {static} install(reader, writer)  ' a host binds the system clipboard
+    + {static} reset()  ' back to the in-process default
+    + {static} read() / write(text)
   }
   class Knob
   class ToggleSwitch
@@ -222,6 +231,7 @@ package ui {
   Button ..> Property
   Checkbox ..> Property
   TextBox ..> Property
+  TextBox ..> Clipboard
   TabView ..> Property
   TabView ..> Spring
   ComboBox ..> Spring

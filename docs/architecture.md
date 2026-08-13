@@ -260,6 +260,12 @@ The `ui` module is split by role into two folders, **one class per file** for ma
   - `Observable<T>` (a single-source-of-truth value with change notification: several UI nodes
     bind one value via `observe()` so a toggle button and the panel it controls can't drift out
     of sync — FR-23),
+  - `Clipboard` (FR-44): the text clipboard seam. The core cannot read a system clipboard —
+    that would be an OS call — so it owns an in-process default and exposes
+    `install(reader, writer)` for a host to bind the real one once at startup. It is
+    deliberately NOT part of `IRenderTarget` or the input HAL: it is neither drawing nor
+    pointer/key input, it carries no per-frame cost, and a target that never installs one
+    still gets working copy/paste within the process.
   - `RectangleSegment`, `CircleSegment`, `LabelSegment`, `PathSegment` (reusable visual nodes;
     `PathSegment` hosts a `Path` via its new `emit()` so path geometry has one implementation, FR-37).
   - `VisualLoop` (FR-34) and `ProgressIndicator` (FR-35): authorable bases that own a custom
