@@ -212,6 +212,14 @@ state under `reducedMotion()`.
 - `GestureRecognizer` converts raw pointer samples into gestures.
 - `InputRouter` handles z-order routing and press capture.
 - `KeyEvent` lives in the UI layer because only controls currently depend on it.
+- **Scroll (FR-46).** `RawPointer::Kind::Scroll` + a pixel `scroll` delta enter through the same
+  seam as every other pointer sample, and `GestureRecognizer` translates them to
+  `Gesture::Type::Scroll` + `delta` **statelessly** — a wheel cannot disturb a press in progress.
+  Routing is split deliberately: `InputRouter` hit-tests a scroll fresh (never handing it to the
+  press capture, since a scroll belongs to what is under the pointer), and `Segment` then bubbles
+  it outward from the deepest hit, because the pointer is almost always over a row *inside* the
+  panel that should scroll. Handlers return `true` only when they actually moved, so a full-view
+  `ScrollView` passes the wheel up rather than eating it.
 - **Touch (FR-28).** `RawPointer`/`Gesture` carry a `touch` flag through the same mechanism as
   the existing modifier flags. `GestureRecognizer` gains a time-tick, `advance(nowMs)` (the input
   module's counterpart to `Segment`/`Spring`/`Animator`'s own `advance`), so it can emit a

@@ -53,6 +53,16 @@ namespace artboard
     bool ScrollView::handleGesture(const Gesture &g, const Point &localPoint)
     {
         using T = Gesture::Type;
+        if (g.type == T::Scroll)
+        {
+            // Wheel and drag land in the same place: the same clamp the drag path uses, and
+            // the same kinetic state cleared, so the two cannot fight each other (FR-46).
+            mFlingVelocity = 0.0;
+            mSnapBackActive = false;
+            const double maxOff = maxOffset();
+            mOffset = std::min(maxOff, std::max(0.0, mOffset + g.delta.y));
+            return maxOff > 0.0;   // nothing to scroll: let it bubble to something that can
+        }
         if (g.type == T::DragStart)
         {
             mDragStartOffset = mOffset;

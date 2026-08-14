@@ -409,6 +409,15 @@ namespace artboard
                 return handled;
             }
             break;
+        case Gesture::Type::Scroll:
+            // A scroll BUBBLES (FR-46): the deepest segment gets it first, and if it does not
+            // handle it the ancestors are offered it in turn. Required, not a nicety — the
+            // pointer is almost always over a row or a control INSIDE the thing that scrolls.
+            if (Segment *child = topmostChildAt(g.pos))
+                if (child->dispatchGesture(g))
+                    return true;
+            return handleGesture(g, toLocal(g.pos));
+
         case Gesture::Type::Click:
         case Gesture::Type::DoubleClick:
         case Gesture::Type::RightClick:

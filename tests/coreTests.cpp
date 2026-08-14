@@ -1325,6 +1325,34 @@ TEST(InputRouter_topmost_capture_and_miss)
     router.route({GT::Up, {999, 999}, {999, 999}, PB::Left}); // up with no capture
     router.clear();
 }
+TEST(InputRouter_scroll_goes_under_the_pointer_not_to_the_press)
+{
+    std::vector<GT> aSeq, bSeq;
+    RectTarget a(Rect{0, 0, 10, 10}, [&](const Gesture &g) { aSeq.push_back(g.type); });
+    RectTarget b(Rect{100, 100, 10, 10}, [&](const Gesture &g) { bSeq.push_back(g.type); });
+    InputRouter router;
+    router.add(&a);
+    router.add(&b);
+
+    Gesture wheel{GT::Scroll, {5, 5}, {5, 5}, PB::Left};
+    wheel.delta = {0, 120};
+    router.route(wheel);
+    CHECK(countOf(aSeq, GT::Scroll) == 1 && bSeq.empty()); // hit-tested fresh
+
+    // A press on b captures it, but a wheel over a must still reach a: scrolling belongs to
+    // whatever is under the pointer, never to whatever happens to be mid-press (FR-46).
+    router.route({GT::Down, {105, 105}, {105, 105}, PB::Left});
+    CHECK(router.captured() == &b);
+    router.route(wheel);
+    CHECK(countOf(aSeq, GT::Scroll) == 2);
+    CHECK(countOf(bSeq, GT::Scroll) == 0 && router.captured() == &b); // press survives the wheel
+
+    wheel.pos = wheel.start = {500, 500}; // over nothing at all: dropped, no crash
+    router.route(wheel);
+    CHECK(countOf(aSeq, GT::Scroll) == 2);
+    router.route({GT::Up, {105, 105}, {105, 105}, PB::Left});
+    router.clear();
+}
 
 // ───────────────────────── clip / clipToBounds ─────────────────────────
 TEST(RecordingTarget_clipRect_records)
@@ -3246,6 +3274,162 @@ TEST(TextBox_insert_and_delete_helpers_are_the_one_mutation_path)
     tb->selectAll();
     tb->deleteSelection();
     CHECK(tb->text == "X");
+}
+
+
+// ───────────────────────── FR-46 scroll input ─────────────────────────
+TEST(GestureRecognizer_scroll_is_stateless_and_carries_pixels)
+{
+    GestureRecognizer rec;
+    std::vector<Gesture> seen;
+    rec.setSink([&](const Gesture &g) { seen.push_back(g); });
+
+    RawPointer wheel;
+    wheel.kind = RawPointer::Kind::Scroll;
+    wheel.pos = {40, 60};
+    wheel.scroll = {0, 48};
+    wheel.timeMs = 10;
+    rec.feed(wheel);
+    CHECK(seen.size() == 1);
+    CHECK(seen[0].type == Gesture::Type::Scroll);
+    CHECK_NEAR(seen[0].delta.y, 48.0, 1e-9);      // pixels, straight through
+    CHECK_NEAR(seen[0].pos.x, 40.0, 1e-9);
+
+    // A scroll must not disturb an in-progress press or drag — a trackpad can report one
+    // mid-drag, and losing the drag would be worse than ignoring the scroll.
+    seen.clear();
+    RawPointer down;
+    down.kind = RawPointer::Kind::Down;
+    down.pos = {10, 10};
+    down.timeMs = 20;
+    rec.feed(down);
+    RawPointer move;
+    move.kind = RawPointer::Kind::Move;
+    move.pos = {60, 10};
+    move.timeMs = 30;
+    rec.feed(move);                                // past the drag threshold
+    const size_t beforeScroll = seen.size();
+    rec.feed(wheel);
+    RawPointer move2;
+    move2.kind = RawPointer::Kind::Move;
+    move2.pos = {90, 10};
+    move2.timeMs = 40;
+    rec.feed(move2);
+    bool stillDragging = false;
+    for (size_t i = beforeScroll; i < seen.size(); ++i)
+        if (seen[i].type == Gesture::Type::Drag) stillDragging = true;
+    CHECK(stillDragging);
+}
+TEST(Scroll_bubbles_from_the_deepest_segment_outward)
+{
+    // The pointer is almost always over a row or a control INSIDE the thing that scrolls, so
+    // an unhandled scroll has to reach the ancestor.
+    struct Catcher : Segment
+    {
+        bool consume = false;
+        int scrolls = 0;
+        bool handleGesture(const Gesture &g, const Point &p) override
+        {
+            if (g.type == Gesture::Type::Scroll)
+            {
+                ++scrolls;
+                return consume;
+            }
+            return Segment::handleGesture(g, p);
+        }
+    };
+    auto outer = std::make_shared<Catcher>();
+    outer->width.set(200);
+    outer->height.set(200);
+    auto inner = std::make_shared<Catcher>();
+    inner->width.set(100);
+    inner->height.set(100);
+    outer->addChild(inner);
+
+    Gesture g{Gesture::Type::Scroll, {50, 50}, {50, 50}, PointerButton::Left};
+    g.delta = {0, 48};
+
+    // The inner one declines: the outer gets it.
+    outer->onGesture(g);
+    CHECK(inner->scrolls == 1);
+    CHECK(outer->scrolls == 1);
+
+    // The inner one consumes: the outer never sees it.
+    inner->consume = true;
+    outer->onGesture(g);
+    CHECK(inner->scrolls == 2);
+    CHECK(outer->scrolls == 1);
+}
+TEST(ScrollView_wheel_and_drag_land_in_the_same_place)
+{
+    auto view = std::make_shared<ScrollView>();
+    view->width.set(120);
+    view->height.set(100);
+    auto content = std::make_shared<RectangleSegment>();
+    content->width.set(120);
+    content->height.set(400);
+    content->style.paint = Paint::filled(Color::rgba(255, 0, 0));
+    view->setContent(content);
+    view->setContentHeight(400.0);
+    view->advance(0.0);
+
+    CHECK_NEAR(view->offset(), 0.0, 1e-9);
+    Gesture wheel{Gesture::Type::Scroll, {60, 50}, {60, 50}, PointerButton::Left};
+    wheel.delta = {0, 60};
+    view->onGesture(wheel);
+    CHECK_NEAR(view->offset(), 60.0, 1e-9);        // y > 0 scrolls toward the end
+
+    wheel.delta = {0, -200};
+    view->onGesture(wheel);
+    CHECK_NEAR(view->offset(), 0.0, 1e-9);         // clamped at the start
+
+    wheel.delta = {0, 100000};
+    view->onGesture(wheel);
+    CHECK_NEAR(view->offset(), view->maxOffset(), 1e-9);   // and at the end
+
+    // Nothing to scroll: it declines, so the gesture can bubble to something that can.
+    auto tiny = std::make_shared<ScrollView>();
+    tiny->width.set(120);
+    tiny->height.set(100);
+    auto small = std::make_shared<RectangleSegment>();
+    small->width.set(120);
+    small->height.set(20);
+    tiny->setContent(small);
+    tiny->setContentHeight(20.0);
+    tiny->advance(0.0);
+    Gesture w2{Gesture::Type::Scroll, {60, 50}, {60, 50}, PointerButton::Left};
+    w2.delta = {0, 60};
+    tiny->onGesture(w2);
+    CHECK_NEAR(tiny->offset(), 0.0, 1e-9);   // nothing to scroll, so nothing moved
+}
+TEST(ScrollView_wheel_cancels_kinetic_motion_rather_than_fighting_it)
+{
+    auto view = std::make_shared<ScrollView>();
+    view->width.set(120);
+    view->height.set(100);
+    auto content = std::make_shared<RectangleSegment>();
+    content->width.set(120);
+    content->height.set(600);
+    content->style.paint = Paint::filled(Color::rgba(255, 0, 0));
+    view->setContent(content);
+    view->setContentHeight(600.0);
+    view->advance(0.0);
+
+    // Fling it, then wheel: the wheel wins and the fling does not keep pulling.
+    view->onGesture({Gesture::Type::DragStart, {60, 80}, {60, 80}, PointerButton::Left});
+    view->onGesture({Gesture::Type::Drag, {60, 20}, {60, 80}, PointerButton::Left});
+    Gesture fling{Gesture::Type::Fling, {60, 20}, {60, 80}, PointerButton::Left};
+    fling.velocity = {0, -2000};
+    view->onGesture(fling);
+    view->advance(16.0);
+
+    Gesture wheel{Gesture::Type::Scroll, {60, 50}, {60, 50}, PointerButton::Left};
+    wheel.delta = {0, 10};
+    view->onGesture(wheel);
+    const double afterWheel = view->offset();
+    view->advance(32.0);
+    view->advance(48.0);
+    CHECK_NEAR(view->offset(), afterWheel, 1e-6);   // no residual drift
 }
 
 // ───────────────────────── widgets ─────────────────────────

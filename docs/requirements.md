@@ -12,7 +12,7 @@ The system covers:
 
 - 2D drawing through a render HAL.
 - Time-based animation through abstract properties.
-- Pointer and keyboard interaction through platform-free input abstractions.
+- Pointer, scroll, and keyboard interaction through platform-free input abstractions.
 - Composite UI objects through `Segment`.
 - A baseline theme and basic controls: `Button`, `Slider`, `Checkbox`, and `TextBox` (with
   selection, clipboard, and a blinking caret).
@@ -832,6 +832,35 @@ shorter side, and a radius of zero continues to emit a plain four-line rectangle
 Because `drawRoundedRect` and `roundedRectPath` are one implementation (FR-42), this applies
 everywhere a rounded rectangle is drawn — every themed control, every panel — and to the path
 a trim (FR-42) operates on.
+
+### FR-46 Scroll input
+
+The input HAL shall carry scrolling. Without it no control can respond to a wheel or a
+trackpad at all, which is why a clipped panel could only be dragged and not scrolled.
+
+- `RawPointer::Kind::Scroll` reports a scroll at a position with a **pixel** delta in
+  `RawPointer::scroll`. Pixels, not notches: a trackpad reports continuous deltas and a wheel
+  reports steps, and only the host knows which it has, so the conversion belongs there.
+- `GestureRecognizer` turns it into `Gesture::Type::Scroll` carrying the same delta in
+  `Gesture::delta`. It is stateless — a scroll begins and ends in one event, and it must not
+  disturb an in-progress press or drag.
+- **Sign:** `delta.y > 0` means "scroll toward the end" (the content moves up), matching a
+  wheel pushed down. `delta.x > 0` means toward the right.
+- **Routing bubbles.** `InputRouter` hit-tests a scroll fresh — deliberately NOT sending it to
+  the press capture, because a scroll belongs to whatever is under the pointer rather than to
+  whatever happens to be mid-press — and `Segment` then delivers it to the deepest segment
+  there and offers it to each ancestor in turn if that segment does not handle it. The bubbling
+  is required, not a nicety: the pointer is almost always over a row, a label, or a control
+  *inside* the thing that should scroll.
+- `ScrollView` shall consume it, moving its offset within the same clamp, rubber-band and
+  spring behaviour a drag already uses (FR-29), so wheel and drag land in the same place.
+
+### FR-47 A clipped panel must scroll, and must show that it can
+
+Any control that clips its content — because the content can exceed the viewport — shall be
+scrollable by wheel **and** by drag, shall clamp its offset to the content, and shall draw a
+**scrollbar whenever the content exceeds the viewport** and not otherwise. Content the user
+cannot reach and cannot see the existence of is a defect, not a layout compromise.
 
 ## 4. Non-functional Requirements
 

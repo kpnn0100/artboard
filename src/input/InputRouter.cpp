@@ -41,6 +41,14 @@ namespace artboard
             mCapture = nullptr; // release capture at the end of the press
             break;
 
+        case T::Scroll:
+            // Hit-tested fresh and deliberately NOT sent to the press capture (FR-46): a
+            // scroll belongs to whatever is under the pointer, not to whatever happens to be
+            // mid-press. From there Segment::dispatchGesture bubbles it outward.
+            if (InputTarget *t = topAt(g.pos))
+                t->onGesture(g);
+            break;
+
         case T::Click:
         case T::DoubleClick:
         case T::RightClick:

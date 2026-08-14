@@ -153,6 +153,50 @@ Concretely, when you position N things:
 - Cover it in the `RecordingTarget` test: assert the recorded op positions do **not** collide
   (e.g. every row/label baseline is distinct; adjacent cells don't overlap).
 
+### Overflow: if it cannot all fit, it scrolls (mandatory)
+
+Snapping siblings into their own slots produces content **taller than the box that holds it**. The
+failure that follows is silent and infuriating: rows are laid out, then clipped away or simply
+dropped, and the user sees a panel that is plainly cut off with **no way to reach the rest**. Never
+ship that.
+
+**So for every panel, list, tree, or column you add or change, ask one question: can its content
+ever exceed its box?** Content grows with the *document*, not with your test fixture — a shape
+list, a property list, a track/step list, a log, a palette, a search result set, a text block all
+grow without bound, so the answer is yes even if today's sample has three rows.
+
+When the answer is yes:
+
+- **Clip to the box, then make it reachable.** Clipping alone is only half the fix; a clip with no
+  scroll is the bug. Wrap it in `ScrollView`, or give the panel a scroll offset that shifts its
+  rows (`y = top - offset`) with a measured `maxOffset = max(0, content - viewport)`.
+- **Measure both numbers every layout** — viewport height and content height — so the answer stays
+  right after a resize, a document edit, or a font change. Never cache a content height computed
+  from a fixture.
+- **Clamp at both ends.** `offset` stays within `[0, maxOffset]`; scrolling past either end is a
+  no-op, not a runaway. When `maxOffset == 0`, `scrollable()` is false and the wheel **returns
+  false so it bubbles** to an ancestor that can use it (see `Segment::dispatchGesture`,
+  `InputRouter` scroll routing) — swallowing a wheel you cannot act on freezes the parent.
+- **Show that it can scroll.** A scrollable panel draws its indicator (a thin rounded bar sized
+  `viewport/content`, drawn only while scrollable), so "there is more" is visible without
+  discovering it by accident. Off-screen content with no visible affordance does not exist.
+- **Accept both the wheel and a drag.** `Gesture::Type::Scroll` (pixel `delta`) and a drag on the
+  body must land in the same place; a wheel also cancels any kinetic/fling motion rather than
+  fighting it.
+- **Do not silently drop rows.** If a row does not fit, it is scrolled to — not skipped. A
+  `break` in a row loop is acceptable **only** as a draw-time clip for rows already reachable by
+  scrolling.
+
+**Test it, in this exact shape** (see
+`Every_clipped_panel_scrolls_by_wheel_and_clamps_at_both_ends`): build a document with far more
+rows than fit, then for **each** overflowing list assert (1) `scrollable()` is true, (2) a wheel
+over it moves `offset()` off zero, (3) wheeling to the end and once more leaves `offset()`
+unchanged, (4) wheeling back reaches exactly `0`. Add the mirror case: a list with nothing to
+scroll reports `scrollable() == false` and ignores the wheel. Point the wheel at a *row inside*
+the list, not at its padding — that is what proves bubbling works. And build the fixture so the
+list **actually on screen** is the one that overflows; padding a list nobody is looking at proves
+nothing.
+
 ## 2A. Visual & interaction quality (design taste)
 
 Correct-and-tested is the floor; a control also has to *look and feel* deliberate. These are the
@@ -281,6 +325,11 @@ the source of truth, the conformance reference, and the floor every adapter must
 - [ ] Layout snaps, doesn't stack: sibling elements align/don't overlap; any overlap is an
       intentional overlay (modal/dropdown/tooltip drawn in the overlay pass) and is commented,
       with a test asserting recorded positions don't collide.
+- [ ] **Overflow scrolls (§2):** every panel/list/tree whose content can outgrow its box clips
+      **and** scrolls — viewport + content measured every layout, offset clamped at both ends, a
+      visible indicator while scrollable, wheel **and** drag land in the same place, an unscrollable
+      list bubbles the wheel instead of eating it, and no row is silently dropped. Tested per list:
+      scrollable → wheel moves it → clamps at the end → returns exactly to 0.
 - [ ] Visual/interaction quality (§2A): motion is motivated + actually driven each frame (no
       snapping half-tween) + eased + honors `reducedMotion()`; colour/radius/type pulled from
       `Theme` (consistency locks); text/fills legible (contrast); empty & loading states drawn

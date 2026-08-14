@@ -62,17 +62,21 @@ package input {
   enum PointerButton
   class RawPointer {
     + touch : bool  ' FR-28
+    + scroll : Point  ' FR-46, pixels; LAST member so brace-init keeps working
   }
   class Gesture {
     + touch : bool
     + velocity : Point  ' set for Fling
+    + delta : Point  ' set for Scroll (FR-46)
   }
   class GestureRecognizer {
     + advance(nowMs)  ' long-press timeout + fling emission (FR-28)
     + setLongPressMs() / setFlingVelocityThreshold() / setVelocityWindowMs()
   }
   interface InputTarget
-  class InputRouter
+  class InputRouter {
+    ' Scroll is hit-tested fresh, never sent to the press capture (FR-46)
+  }
   GestureRecognizer ..> RawPointer
   GestureRecognizer ..> Gesture
   InputRouter o--> InputTarget

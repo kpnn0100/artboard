@@ -32,6 +32,22 @@ namespace artboard
         mTouch = e.touch;
         switch (e.kind)
         {
+        case K::Scroll:
+        {
+            // Stateless (FR-46): a scroll begins and ends in one event, and it must NOT
+            // disturb an in-progress press or drag — a trackpad can report one mid-drag.
+            if (mSink)
+            {
+                Gesture g{Gesture::Type::Scroll, e.pos, e.pos, e.button};
+                g.alt = mAlt;
+                g.shift = mShift;
+                g.ctrl = mCtrl;
+                g.touch = mTouch;
+                g.delta = e.scroll;
+                mSink(g);
+            }
+            return;
+        }
         case K::Down:
             mPressed = true;
             mDragging = false;

@@ -512,6 +512,51 @@ routing it like `Click` (a fresh hit-test) would let an unrelated child under th
 absorb it instead of the segment that was actually being dragged (e.g. a `ScrollView`'s own
 content child, rather than the `ScrollView`).
 
+## 3b. Scroll input (FR-46) and the reachable-panel rule (FR-47)
+
+### Raw → gesture
+
+`RawPointer` gains `Kind::Scroll` and a `Point scroll` **pixel** delta (`y > 0` scrolls toward the
+end of the content, matching `ScrollView::offset` growing). `scroll` is the **last** member of the
+struct on purpose: the existing brace-initialised `RawPointer{...}` literals across the tests and
+adapters keep compiling only while every new field goes on the end.
+
+`GestureRecognizer::feed` handles `Scroll` **first and statelessly** — it emits
+`Gesture{Type::Scroll, pos, pos, button}` with `delta = rp.scroll` and returns immediately, without
+touching `mDown`, `mDragging`, the velocity samples, or the click timers. A wheel turned in the
+middle of a drag therefore cannot break the drag, and a wheel with no press before it needs no
+synthetic press.
+
+### Routing: fresh hit-test, then bubble
+
+Two seams cooperate, and each does exactly one thing:
+
+- `InputRouter::route` hit-tests a `Scroll` **fresh** (`topAt(g.pos)`) and deliberately does **not**
+  send it to `mCapture`. A scroll belongs to whatever is under the pointer; a press held elsewhere
+  is irrelevant, and the press must survive the wheel untouched (`captured()` is unchanged).
+- `Segment::dispatchGesture` then **bubbles**: it offers the gesture to the topmost child at the
+  point, and if that child returns `false`, handles it itself. This is what makes scrolling usable
+  at all — the pointer is nearly always over a row, a label, or a control *inside* the thing that
+  should scroll, so delivery to the deepest hit alone would find a target that cannot scroll.
+
+The bubble only works if non-consumers say so, which fixes the contract for every handler:
+**return `true` only when the scroll actually moved something.** `ScrollView::handleGesture`
+returns `maxOff > 0.0` — a `ScrollView` with nothing out of view passes the wheel to its parent
+instead of silently eating it. A scroll over empty space reaches `topAt() == nullptr` and is
+dropped.
+
+`ScrollView` also **clears its kinetic state** (`mVel`, any in-flight fling) before applying a
+wheel delta: the two inputs express the same intent, so a wheel stops the fling it interrupts
+rather than fighting it, and a wheel and a drag of the same distance land on the same offset.
+
+### FR-47 in practice
+
+FR-47 ("a clipped panel must scroll, and must show that it can") is a rule about *every* clipped
+list, not a class. Artboard supplies the mechanism (`ScrollView`, the gesture, the routing); each
+app satisfies it per panel — Genesis does so with its own small `ui::ListScroll` helper, which
+measures viewport and content every layout, clamps `[0, maxOffset]`, returns `false` from `wheel()`
+when there is nothing to scroll (so the bubble continues), and draws its bar only while scrollable.
+
 ## 4. Visual Segment Primitives
 
 ### 4.1 `RectangleSegment`
