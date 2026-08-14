@@ -1105,6 +1105,36 @@ inline helper in `base/InputController.h`.
   and hit-testing uses, so it cannot lag behind an easing value. When zoomed (>1×) the view is
   interactive and a drag pans 1:1; at 1× it is display-only (`hitTestSelf` false, click-through).
 
+## 12a. `ComboBox` popup placement and scrolling (FR-48)
+
+The option list is an overlay, so it is not clipped by the panel that owns it — which is exactly
+why the panel's bounds cannot decide whether the list is visible. `ComboBox::popup()` computes the
+whole geometry once and returns it:
+
+| field | meaning |
+| --- | --- |
+| `top` | local y of the list's top edge — `height()` when it opens down, `-height` when up |
+| `height` | what is showing: whole rows, never more than `maxPopupHeight` (default 240) |
+| `content` | every row end to end (`options * rowHeight`) |
+| `maxScroll` | `max(0, content - height)` |
+| `up` | opened upward for want of room below |
+
+Direction comes from the **root** segment — the window — reached by walking `Segment::parent()`
+(added for this, FR-48) and comparing the control's `worldTransform()` origin against the root's
+height. Room below wins unless the list does not fit there and more room exists above; if neither
+side fits, the taller side is taken and `height` shrinks to it, so the list is always fully on
+screen and the remainder is scrolled to. A ComboBox with no parent treats space as unlimited, which
+keeps a bare control in a unit test opening downward as before.
+
+Three users read that one struct — `hitTestSelf` (is this point on the list?), `rowAt` (which
+option is under the pointer, offset by the scroll) and `onOverlay` (the drawing) — so what is drawn
+is always what is hit. `onOverlay` clips to the box before drawing rows, because a scrolled row
+would otherwise paint over the control or past the list's edge, and draws the indicator only while
+`maxScroll > 0`. The offset is a `Spring` so it eases (FR-24), and `setOpen(true)` seeds it to
+centre the current selection — otherwise picking the thirtieth easing means opening a list that
+appears to start at the first. `Gesture::Type::Scroll` and a body drag both move it, and both
+return `false` when there is nothing out of view so the wheel bubbles (FR-46).
+
 ## 13. Traceability to Requirements
 
 - FR-3 and FR-10 map to `Segment`.
@@ -1155,3 +1185,6 @@ inline helper in `base/InputController.h`.
   `RecordingTarget` (`DrawOp::fontFamily`/`DrawOp::letterSpacingPx`), the Canvas2D / Cairo
   adapters, and `ui::TextStyle` + `scene::Text` (propagated through `LabelSegment`, `TabView`,
   `ComboBox`, and `Knob`).
+- FR-48 maps to `ComboBox::maxPopupHeight` / `Popup` / `popup()` / `rowAt` / `scrollBy` /
+  `mScroll`, the clip and indicator in `ComboBox::onOverlay`, and `Segment::parent()` — which the
+  popup walks to find the root whose bounds decide which way it has room to open.

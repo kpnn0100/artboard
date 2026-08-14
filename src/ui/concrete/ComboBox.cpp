@@ -1,4 +1,5 @@
 #include "ComboBox.h"
+#include <cmath>
 #include "../base/Interaction.h"
 
 namespace artboard
@@ -23,6 +24,54 @@ namespace artboard
             mSelected = index;
     }
 
+    ComboBox::Popup ComboBox::popup() const
+    {
+        Popup p;
+        const double h = height.value();
+        p.content = (double)mOptions.size() * rowHeight;
+        // Whole rows only, up to the bound: half a row reads as a rendering fault rather than as
+        // "there is more", and the indicator is what says there is more (FR-48).
+        const int cap = std::max(1, (int)std::floor(maxPopupHeight / std::max(1.0, rowHeight)));
+        int rows = std::min((int)mOptions.size(), cap);
+
+        // Room is measured against the ROOT — the window — because an overlay is deliberately not
+        // clipped by the panel that owns it, so the panel's bounds say nothing about visibility.
+        const Segment *root = this;
+        while (root->parent())
+            root = root->parent();
+        const double worldY = worldTransform().apply(Point{0.0, 0.0}).y;
+        const double rootH = root->height.value();
+        const double margin = 4.0;
+        double below = rootH - (worldY + h) - margin;
+        double above = worldY - margin;
+        if (root == this) below = above = p.content;   // unattached: no edge to respect
+
+        double want = (double)rows * rowHeight;
+        p.up = want > below && above > below;          // no room down, and more room up
+        const double room = p.up ? above : below;
+        if (want > room)                              // still short: show what fits, scroll the rest
+            rows = std::max(1, (int)std::floor(room / std::max(1.0, rowHeight)));
+        p.height = (double)rows * rowHeight;
+        p.top = p.up ? -p.height : h;
+        p.maxScroll = std::max(0.0, p.content - p.height);
+        return p;
+    }
+
+    int ComboBox::rowAt(const Point &localPoint) const
+    {
+        if (!mOpen) return -1;
+        const Popup p = popup();
+        if (localPoint.y < p.top || localPoint.y >= p.top + p.height) return -1;
+        const int row = (int)std::floor((localPoint.y - p.top + mScroll.value()) / rowHeight);
+        return (row >= 0 && row < (int)mOptions.size()) ? row : -1;
+    }
+
+    void ComboBox::scrollBy(double dy)
+    {
+        const Popup p = popup();
+        mScroll.setTarget(std::min(p.maxScroll, std::max(0.0, mScroll.target() + dy)));
+    }
+
     bool ComboBox::hitTestSelf(const Point &localPoint) const
     {
         const double w = width.value(), h = height.value();
@@ -31,7 +80,10 @@ namespace artboard
         if (localPoint.y >= 0.0 && localPoint.y <= h)
             return true;
         if (mOpen)
-            return localPoint.y > h && localPoint.y <= h + (double)mOptions.size() * rowHeight;
+        {
+            const Popup p = popup();
+            return localPoint.y >= p.top && localPoint.y <= p.top + p.height;
+        }
         return false;
     }
 
@@ -46,7 +98,7 @@ namespace artboard
         const bool showHi = mOpen && isHovered() && mHoverRow >= 0 && mHoverRow < (int)mOptions.size();
         if (showHi)
         {
-            const double targetY = height.value() + mHoverRow * rowHeight;
+            const double targetY = popup().top + (double)mHoverRow * rowHeight - mScroll.value();
             if (mRowHiA.value() < 0.01)
                 mRowHiY.reset(targetY);  // appear at the row, don't glide up from the top
             mRowHiY.setTarget(targetY);
@@ -54,6 +106,7 @@ namespace artboard
         mRowHiA.setTarget(showHi ? 1.0 : 0.0);
         mRowHiY.advance(dt);
         mRowHiA.advance(dt);
+        mScroll.advance(dt);   // the list offset eases like every other visible change (FR-48)
         Segment::advance(nowMs);
     }
 
@@ -61,6 +114,14 @@ namespace artboard
     {
         mOpen = open; // logical state flips at once so rows stay hit-testable while revealing
         mOpenAnim.animateTo(open ? 1.0 : 0.0, 160.0, Easing::EaseOutCubic, mNowMs);
+        if (open)
+        {
+            // Open showing the current choice, centred where it can be: otherwise picking the
+            // thirteenth option means opening a list that looks like it starts at the first.
+            const Popup p = popup();
+            const double centred = (double)mSelected * rowHeight - (p.height - rowHeight) * 0.5;
+            mScroll.reset(std::min(p.maxScroll, std::max(0.0, centred)));
+        }
     }
 
     bool ComboBox::handleGesture(const Gesture &g, const Point &localPoint)
@@ -68,11 +129,24 @@ namespace artboard
         if (g.type == Gesture::Type::Move)
         {
             // Track which open-list row the pointer is over (drives the hover highlight).
-            const double h = height.value();
-            mHoverRow = (mOpen && localPoint.y > h)
-                            ? (int)((localPoint.y - h) / rowHeight)
-                            : -1;
+            mHoverRow = rowAt(localPoint);
             return Segment::handleGesture(g, localPoint);
+        }
+        // A long list scrolls by wheel and by drag (FR-48). Returning false when there is nothing
+        // out of view lets the gesture bubble to whatever can use it (FR-46).
+        if (g.type == Gesture::Type::Scroll)
+        {
+            if (!mOpen || !popupScrollable())
+                return false;
+            scrollBy(g.delta.y);
+            return true;
+        }
+        if (mOpen && (g.type == Gesture::Type::Drag || g.type == Gesture::Type::DragStart))
+        {
+            if (!popupScrollable())
+                return false;
+            scrollBy(-(localPoint.y - toLocal(g.start).y) * 0.35);
+            return true;
         }
         if (g.type != Gesture::Type::Click)
             return Segment::handleGesture(g, localPoint);
@@ -84,13 +158,13 @@ namespace artboard
             raise();  // hit-tested first so dropdown clicks don't fall through to siblings
             return true;
         }
-        if (localPoint.y <= h)
+        if (localPoint.y >= 0.0 && localPoint.y <= h)
         {
             setOpen(false);
             return true;
         }
-        const int row = (int)((localPoint.y - h) / rowHeight);
-        if (row >= 0 && row < (int)mOptions.size())
+        const int row = rowAt(localPoint);
+        if (row >= 0)
         {
             mSelected = row;
             if (onChange)
@@ -162,17 +236,25 @@ namespace artboard
         // Drawn in the overlay pass so it sits on top of every other control and is
         // never clipped by the owning panel. An opaque scrim under the popup hides
         // whatever is behind it. The list fades in and slides down into place.
-        const double w = width.value(), h = height.value();
-        const double popupH = (double)mOptions.size() * rowHeight;
-        const double yoff = (1.0 - p) * -6.0;
+        const double w = width.value();
+        // ONE geometry, shared with the hit test: what is drawn is what is hit (FR-48). It slides
+        // in from the side it opened towards, so the motion reads as "unfolding from the control".
+        const Popup box = popup();
+        const double yoff = (1.0 - p) * (box.up ? 6.0 : -6.0);
+        const double top = box.top + yoff;
         auto fade = [p](Color c) { c.a *= p; return c; };
 
-        drawRoundedRect(t, Rect{-1, h - 1 + yoff, w + 2, popupH + 2}, mStyle.popup.cornerRadius,
+        drawRoundedRect(t, Rect{-1, top - 1, w + 2, box.height + 2}, mStyle.popup.cornerRadius,
                         Paint::filled(fade(mStyle.field.paint.fill)));  // opaque backing
         Paint pop = mStyle.popup.paint;
         pop.fill = fade(pop.fill);
         pop.stroke = fade(pop.stroke);
-        drawRoundedRect(t, Rect{0, h + yoff, w, popupH}, mStyle.popup.cornerRadius, pop);
+        drawRoundedRect(t, Rect{0, top, w, box.height}, mStyle.popup.cornerRadius, pop);
+
+        // Clipped to the list: a scrolled row must not draw over the control or past the edge.
+        t.save();
+        t.clipRect(0.0, top, w, box.height);
+        const double scroll = mScroll.value();
 
         // Gliding hover highlight under the row the pointer rests on (fades with mRowHiA).
         const double hiA = mRowHiA.value() * p;
@@ -185,7 +267,9 @@ namespace artboard
         }
         for (int i = 0; i < (int)mOptions.size(); ++i)
         {
-            const double ry = h + yoff + i * rowHeight;
+            const double ry = top + (double)i * rowHeight - scroll;
+            if (ry + rowHeight < top || ry > top + box.height)
+                continue;                       // scrolled out of the list: nothing to draw
             if (i == mSelected)
             {
                 Paint sel = mStyle.rowSelected.paint;
@@ -196,6 +280,25 @@ namespace artboard
             t.setFill(fade(mStyle.text.color));
             t.drawText(mOptions[i], 10.0, ry + rowHeight * 0.5 + mStyle.text.sizePx * 0.35, mStyle.text.sizePx,
                        mStyle.text.fontFamily, mStyle.text.letterSpacingPx);
+        }
+        t.restore();
+
+        // The indicator, drawn ONLY while something is out of view (FR-47): a bar that is always
+        // there claims more content than exists.
+        if (box.maxScroll > 0.0)
+        {
+            const double barW = 3.0;
+            const double thumbH = std::max(18.0, box.height * box.height / box.content);
+            const double travel = box.height - thumbH;
+            const double ty = top + travel * (scroll / box.maxScroll);
+            Color track = mStyle.text.color;
+            track.a *= 0.10 * p;
+            Color thumb = mStyle.text.color;
+            thumb.a *= 0.45 * p;
+            drawRoundedRect(t, Rect{w - barW - 2.0, top, barW, box.height}, barW * 0.5,
+                            Paint::filled(track));
+            drawRoundedRect(t, Rect{w - barW - 2.0, ty, barW, thumbH}, barW * 0.5,
+                            Paint::filled(thumb));
         }
     }
 }

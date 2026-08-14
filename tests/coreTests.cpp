@@ -3584,6 +3584,153 @@ TEST(ComboBox_open_select_and_render)
     RecordingTarget e; empty->render(e); // empty options branch
     empty->onGesture({Gesture::Type::Down, {1, 1}, {1, 1}, PointerButton::Left}); // non-Click branch
 }
+TEST(ComboBox_opens_where_there_is_room_and_scrolls_when_there_is_not)
+{
+    /*  Thirteen easings under a control one row above the bottom of the window: the list has to
+     *  open upward, cap its height, and let the rest be reached (FR-48). Before this it dropped
+     *  down at full height off the bottom edge, and the last options could not be picked at all.
+     */
+    std::vector<std::string> many;
+    for (int i = 0; i < 13; ++i)
+        many.push_back("Easing" + std::to_string(i));
+
+    auto root = std::make_shared<Segment>();
+    root->width.set(400.0);
+    root->height.set(300.0);
+    auto c = std::make_shared<ComboBox>();
+    c->width.set(120.0);
+    c->height.set(24.0);
+    c->setOptions(many);
+    c->maxPopupHeight = 140.0;                 // 5 whole rows of 28
+    root->addChild(c);
+    // Gestures and hit tests are in the PARENT's space; the popup geometry is local.
+    auto at = [&](double localY) { return c->y.value() + localY; };
+    auto click = [&](double localY) {
+        c->onGesture({Gesture::Type::Click, {10.0, at(localY)}, {10.0, at(localY)}, PointerButton::Left});
+    };
+
+    // Plenty of room below: opens DOWN, capped, and scrollable.
+    c->y.set(20.0);
+    root->advance(0.0);
+    ComboBox::Popup box = c->popup();
+    CHECK(!box.up);
+    CHECK_NEAR(box.top, 24.0, 1e-9);           // just under the field
+    CHECK_NEAR(box.height, 140.0, 1e-9);       // the bound, not 13 * 28 = 364
+    CHECK_NEAR(box.content, 364.0, 1e-9);
+    CHECK_NEAR(box.maxScroll, 224.0, 1e-9);
+
+    // One row above the bottom: no room below, so it opens UP.
+    c->y.set(root->height.value() - c->height.value() - 10.0);
+    box = c->popup();
+    CHECK(box.up);
+    CHECK_NEAR(box.top, -140.0, 1e-9);         // above the field
+    CHECK(!c->hitTest({10.0, at(-5.0)}));      // closed: nothing above it is hit-testable
+    click(5.0);
+    CHECK(c->isOpen());
+    CHECK(c->hitTest({10.0, at(-5.0)}));       // open upward: the band above IS
+    CHECK(!c->hitTest({10.0, at(40.0)}));      // and nothing below it is
+
+    // Opening reveals the selection rather than starting at the first row.
+    click(5.0);                                // close
+    c->setSelectedIndex(12);
+    click(5.0);                                // open
+    CHECK(c->popupScroll() > 100.0);
+    for (double t = 0.0; t <= 300.0; t += 16.0) root->advance(t);
+    CHECK(c->popupScroll() > 100.0);
+
+    // The wheel scrolls it, and a click lands on the row under the cursor — which depends on the
+    // offset, so this is also what proves the drawing and the hit test share one geometry.
+    click(5.0);                                // close
+    c->setSelectedIndex(0);
+    click(5.0);                                // open
+    CHECK_NEAR(c->popupScroll(), 0.0, 1e-9);
+    box = c->popup();
+    Gesture wheel{Gesture::Type::Scroll, {10.0, at(box.top + 10.0)}, {10.0, at(box.top + 10.0)},
+                  PointerButton::Left};
+    wheel.delta = {0.0, 56.0};                 // two rows
+    c->onGesture(wheel);
+    for (double t = 300.0; t <= 1200.0; t += 16.0) root->advance(t);
+    CHECK_NEAR(c->popupScroll(), 56.0, 0.5);
+    click(box.top + 2.0 * 28.0 + 4.0);         // two rows down, but scrolled by two
+    CHECK(c->selectedIndex() == 4);
+
+    // Runaway is refused at both ends.
+    click(5.0);                                // open
+    for (int i = 0; i < 40; ++i) c->onGesture(wheel);
+    for (double t = 1200.0; t <= 2200.0; t += 16.0) root->advance(t);
+    CHECK_NEAR(c->popupScroll(), c->popup().maxScroll, 0.5);
+    wheel.delta = {0.0, -56.0};
+    for (int i = 0; i < 40; ++i) c->onGesture(wheel);
+    for (double t = 2200.0; t <= 3200.0; t += 16.0) root->advance(t);
+    CHECK_NEAR(c->popupScroll(), 0.0, 0.5);
+
+    // A short list has nothing to scroll, so the wheel must BUBBLE rather than be eaten — proved
+    // where it matters, at the ancestor that would otherwise never see it (FR-46).
+    struct Counter : Segment
+    {
+        int scrolls = 0;
+        bool handleGesture(const Gesture &g, const Point &) override
+        {
+            if (g.type == Gesture::Type::Scroll) ++scrolls;
+            return true;
+        }
+    };
+    auto host = std::make_shared<Counter>();
+    host->width.set(400.0);
+    host->height.set(600.0);
+    auto few = std::make_shared<ComboBox>();
+    few->width.set(120.0);
+    few->height.set(24.0);
+    few->y.set(20.0);
+    few->setOptions({"a", "b"});
+    host->addChild(few);
+    host->advance(0.0);
+    CHECK_NEAR(few->popup().maxScroll, 0.0, 1e-9);
+    few->onGesture({Gesture::Type::Click, {10.0, 25.0}, {10.0, 25.0}, PointerButton::Left});
+    CHECK(few->isOpen());
+    Gesture over{Gesture::Type::Scroll, {10.0, 60.0}, {10.0, 60.0}, PointerButton::Left};
+    over.delta = {0.0, 56.0};
+    host->onGesture(over);
+    CHECK(host->scrolls == 1);                  // the ancestor got it
+}
+TEST(ComboBox_scrolled_rows_are_clipped_and_the_bar_only_shows_when_needed)
+{
+    // The list is an overlay, so a scrolled row would otherwise draw over the control and past the
+    // list's edge; and a bar that is always there claims content that does not exist (FR-47).
+    auto root = std::make_shared<Segment>();
+    root->width.set(400.0);
+    root->height.set(600.0);
+    auto c = std::make_shared<ComboBox>();
+    c->width.set(120.0);
+    c->height.set(24.0);
+    c->y.set(20.0);
+    std::vector<std::string> many;
+    for (int i = 0; i < 13; ++i)
+        many.push_back("E" + std::to_string(i));
+    c->setOptions(many);
+    c->maxPopupHeight = 140.0;
+    root->addChild(c);
+    c->onGesture({Gesture::Type::Click, {10.0, 5.0}, {10.0, 5.0}, PointerButton::Left});
+    for (double t = 0.0; t <= 300.0; t += 16.0) root->advance(t);
+
+    RecordingTarget ov;
+    c->renderOverlay(ov);
+    CHECK(ov.count(K::ClipRect) >= 1);          // the rows are clipped to the list
+    CHECK(ov.count(K::DrawText) <= 6);          // only what fits, not all 13
+    CHECK(ov.count(K::DrawText) >= 5);
+
+    auto few = std::make_shared<ComboBox>();
+    few->width.set(120.0);
+    few->height.set(24.0);
+    few->setOptions({"a", "b"});
+    root->addChild(few);
+    few->onGesture({Gesture::Type::Click, {10.0, 5.0}, {10.0, 5.0}, PointerButton::Left});
+    for (double t = 0.0; t <= 300.0; t += 16.0) root->advance(t);
+    RecordingTarget shortOv;
+    few->renderOverlay(shortOv);
+    const int withBar = (int)ov.count(K::FillPath), without = (int)shortOv.count(K::FillPath);
+    CHECK(withBar > without);                   // the bar is drawn only for the long list
+}
 TEST(ComboBox_overlay_on_top_and_raise)
 {
     auto root = std::make_shared<Segment>();

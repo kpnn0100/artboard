@@ -192,7 +192,11 @@ package ui {
   class Knob
   class ToggleSwitch
   class ProgressBar
-  class ComboBox
+  class ComboBox {
+    + maxPopupHeight : double  ' FR-48
+    + popup() : Popup  ' one geometry: hit test, row lookup, drawing
+    + popupScrollable() / popupScroll()
+  }
   class TabView
   class ScrollView {
     + applyRubberBand(raw)  ' FR-29: compress excess past [0,maxOffset] instead of hard clamp

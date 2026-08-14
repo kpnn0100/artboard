@@ -869,6 +869,33 @@ offset limit that stops short, so the final row is unreachable at *every* offset
 rows are shown only when they fit whole, that shortfall hides a whole row. The property to
 assert is therefore reachability: scrolled to the end, the last row lands inside the box.
 
+### FR-48 A dropdown opens where there is room, and scrolls when there is not
+
+A `ComboBox`'s option list is an overlay that can be taller than the space beneath the control and
+longer than any fixed bound — an easing list has thirteen entries, and the control that owns it may
+sit one row above the bottom of the window. FR-47 applied to an overlay:
+
+- **It opens where there is room.** The popup drops **down** when the space between the control's
+  bottom edge and the root segment's bottom can hold it, and **up** otherwise; when neither side
+  can, it takes the taller one. The decision is made against the **root's** bounds — the window —
+  because an overlay is deliberately not clipped by the panel that owns it, so the panel's bounds
+  say nothing about whether the list is visible.
+- **It never exceeds `maxPopupHeight`, and scrolls inside it.** The popup shows whole rows up to
+  that bound; the rest is reached by wheel or by dragging the list, clamped at both ends, with the
+  indicator drawn only while there is something out of view. A popup with nothing to scroll returns
+  the wheel so it bubbles. Rows are **clipped** to the popup, so a scrolled row cannot draw over
+  the control or past the list's edge.
+- **Opening reveals the selection.** The list opens scrolled so the selected option is visible —
+  otherwise choosing the thirteenth easing means opening a list that appears to start at the first.
+- **What is drawn is what is hit.** The hit test, the row the pointer resolves to, and the drawn
+  rows read the same geometry (direction, height, scroll offset), so a click always lands on the
+  row under the cursor.
+- The scroll offset eases (a `Spring`), like every other visible change (FR-24), and collapses
+  instantly under `reducedMotion()`.
+
+To decide direction a segment must know what it is attached to, so `Segment::parent()` exposes the
+owning segment (null at the root). It is a read-only accessor of information the tree already has.
+
 ## 4. Non-functional Requirements
 
 ### NFR-1 Platform independence

@@ -96,6 +96,10 @@ namespace artboard
         // ---- hover (FR-24) ----
         /** True while the pointer rests over this segment (single global owner). */
         bool isHovered() const { return mHovered; }
+        /** The segment holding this one, or null at the root. Read-only: an overlay needs to know
+         *  what it is attached to in order to decide which way it has room to open (FR-48). */
+        Segment *parent() const { return mParent; }
+
         /** Animated hover factor in [0,1]; controls scale their hover look by it. */
         double hoverAmount() const { return mHoverAmount.value(); }
         // ---- disabled state (FR-40) ----

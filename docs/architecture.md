@@ -212,6 +212,12 @@ state under `reducedMotion()`.
 - `GestureRecognizer` converts raw pointer samples into gestures.
 - `InputRouter` handles z-order routing and press capture.
 - `KeyEvent` lives in the UI layer because only controls currently depend on it.
+- **An overlay places itself against the ROOT (FR-48).** A dropdown is drawn in the overlay pass
+  precisely so the panel holding it cannot clip it — which means the panel's bounds say nothing
+  about whether it is visible. `ComboBox` therefore walks `Segment::parent()` to the root and
+  compares its own `worldTransform()` origin against the root's height to decide whether to open
+  down or up, capping its height and scrolling the remainder. Placement against the window is a
+  property of overlays in general, not of this one control.
 - **Scroll (FR-46).** `RawPointer::Kind::Scroll` + a pixel `scroll` delta enter through the same
   seam as every other pointer sample, and `GestureRecognizer` translates them to
   `Gesture::Type::Scroll` + `delta` **statelessly** — a wheel cannot disturb a press in progress.
