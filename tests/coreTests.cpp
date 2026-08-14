@@ -498,15 +498,91 @@ TEST(Rectangle_sharp_and_rounded)
     Rectangle sharp(Rect{0, 0, 10, 10}, Paint::filled(Color::rgba(255, 0, 0)));
     sharp.render(t);
     CHECK(t.count(K::FillPath) == 1);
-    CHECK(t.count(K::QuadTo) == 0);     // no corners
+    CHECK(t.count(K::CubicTo) == 0);    // no corners
     CHECK(t.count(K::SetTransform) == 1);
 
     t.clear();
     // radius larger than half -> clamp branch; stroked border too.
     Rectangle round(Rect{0, 0, 10, 20}, Paint::filledStroked(Color::rgba(0, 0, 0), Color::rgba(255, 255, 255), 2), 999);
     round.render(t);
-    CHECK(t.count(K::QuadTo) == 4);     // four rounded corners
+    // Four corners, each a CUBIC quarter-circle (FR-45) rather than a quadratic.
+    CHECK(t.count(K::CubicTo) == 4);
+    CHECK(t.count(K::QuadTo) == 0);
     CHECK(t.count(K::FillPath) == 1 && t.count(K::StrokePath) == 1);
+}
+
+TEST(Rounded_corners_are_circular_arcs_FR45)
+{
+    /*  A quadratic whose control point sits at the box corner — the obvious shortcut — bulges
+     *  ~6% outward at the middle of the corner, so the corner reads as squarer and heavier
+     *  than the radius says, and it does not match the circles drawn beside it. Each corner is
+     *  a cubic quarter-circle instead, within 0.1% of a true arc.
+     */
+    auto worstDeviation = [](double r) {
+        Path p = roundedRectPath(Rect{0, 0, 200, 200}, r);
+        p.paint = Paint::stroked(Color::rgba(255, 255, 255), 1.0);
+        RecordingTarget t;
+        p.render(t);
+        // The first cubic is the top-right corner; its arc centre is (200-r, r).
+        const Point centre{200.0 - r, r};
+        Point p0{200.0 - r, 0.0}, c1{}, c2{}, p3{};
+        for (const auto &op : t.ops())
+            if (op.kind == K::CubicTo)
+            {
+                c1 = {op.args[0], op.args[1]};
+                c2 = {op.args[2], op.args[3]};
+                p3 = {op.args[4], op.args[5]};
+                break;
+            }
+        double worst = 0.0;
+        for (int i = 0; i <= 40; ++i)
+        {
+            const double s = i / 40.0, u = 1.0 - s;
+            const Point b{u * u * u * p0.x + 3 * u * u * s * c1.x + 3 * u * s * s * c2.x + s * s * s * p3.x,
+                          u * u * u * p0.y + 3 * u * u * s * c1.y + 3 * u * s * s * c2.y + s * s * s * p3.y};
+            worst = std::max(worst, std::fabs(std::hypot(b.x - centre.x, b.y - centre.y) - r) / r);
+        }
+        return worst;
+    };
+    CHECK(worstDeviation(4.0) < 0.001);      // and it holds at every radius, being a ratio
+    CHECK(worstDeviation(12.0) < 0.001);
+    CHECK(worstDeviation(40.0) < 0.001);
+
+    // The corner joins the straight edges exactly, with no kink: the arc's endpoints are the
+    // points the lines stop at.
+    Path p = roundedRectPath(Rect{0, 0, 100, 60}, 10.0);
+    p.paint = Paint::stroked(Color::rgba(255, 255, 255), 1.0);
+    RecordingTarget t;
+    p.render(t);
+    std::vector<Point> verts;
+    for (const auto &op : t.ops())
+    {
+        if (op.kind == K::MoveTo || op.kind == K::LineTo) verts.push_back({op.args[0], op.args[1]});
+        else if (op.kind == K::CubicTo) verts.push_back({op.args[4], op.args[5]});
+    }
+    CHECK(verts.size() == 9);                        // move + 4 lines + 4 corners
+    CHECK_NEAR(verts[0].x, 10.0, 1e-9);              // starts one radius in along the top
+    CHECK_NEAR(verts[0].y, 0.0, 1e-9);
+    CHECK_NEAR(verts[1].x, 90.0, 1e-9);              // the top edge stops one radius early
+    CHECK_NEAR(verts[2].x, 100.0, 1e-9);             // the corner lands on the right edge
+    CHECK_NEAR(verts[2].y, 10.0, 1e-9);
+    CHECK_NEAR(verts.back().x, verts[0].x, 1e-9);    // and it closes where it began
+    CHECK_NEAR(verts.back().y, verts[0].y, 1e-9);
+
+    // Clamping is unchanged: a huge radius becomes half the shorter side, which is a stadium.
+    Path pill = roundedRectPath(Rect{0, 0, 40, 20}, 999.0);
+    pill.paint = Paint::filled(Color::rgba(255, 255, 255));
+    RecordingTarget pt;
+    pill.render(pt);
+    CHECK(pt.count(K::CubicTo) == 4);
+    for (const auto &op : pt.ops())
+        if (op.kind == K::CubicTo)
+        {
+            CHECK(op.args[4] >= -1e-9);
+            CHECK(op.args[4] <= 40.0 + 1e-9);        // never outside the rect it rounds
+            CHECK(op.args[5] >= -1e-9);
+            CHECK(op.args[5] <= 20.0 + 1e-9);
+        }
 }
 
 TEST(FilledStroked_shares_one_path_FR16)

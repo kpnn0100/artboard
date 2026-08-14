@@ -29,11 +29,21 @@ namespace artboard
             double r = cornerRadius;
             const double half = (w < h ? w : h) * 0.5;
             if (r > half) r = half;
+            // Each corner is a quarter CIRCLE (FR-45), so it matches the circles drawn
+            // beside it. A quadratic with its control point at the box corner — the obvious
+            // shortcut — bulges ~6% outward at the middle of the corner and reads as squarer
+            // than the radius says. The cubic kappa offset below holds the outline within
+            // 0.1% of a true arc, and is the same constant ellipsePath uses.
+            const double k = r * 0.5522847498307936;
             p.moveTo(x + r, y);
-            p.lineTo(x + w - r, y);     p.quadTo(x + w, y, x + w, y + r);
-            p.lineTo(x + w, y + h - r); p.quadTo(x + w, y + h, x + w - r, y + h);
-            p.lineTo(x + r, y + h);     p.quadTo(x, y + h, x, y + h - r);
-            p.lineTo(x, y + r);         p.quadTo(x, y, x + r, y);
+            p.lineTo(x + w - r, y);
+            p.cubicTo(x + w - r + k, y, x + w, y + r - k, x + w, y + r);          // top-right
+            p.lineTo(x + w, y + h - r);
+            p.cubicTo(x + w, y + h - r + k, x + w - r + k, y + h, x + w - r, y + h);  // bottom-right
+            p.lineTo(x + r, y + h);
+            p.cubicTo(x + r - k, y + h, x, y + h - r + k, x, y + h - r);          // bottom-left
+            p.lineTo(x, y + r);
+            p.cubicTo(x, y + r - k, x + r - k, y, x + r, y);                      // top-left
             p.close();
         }
         else

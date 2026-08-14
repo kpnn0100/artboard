@@ -814,6 +814,25 @@ where a live target exists. The caret still moves within the same frame the clic
 because a click schedules a redraw; and the behaviour no longer depends on whether a host
 happens to keep its drawing context alive between frames.
 
+### FR-45 A rounded corner is a circular arc
+
+A rounded rectangle's corners shall be **quarter circles** of the corner radius, not a
+cheaper curve that merely passes through the same two endpoints.
+
+The distinction is visible, not academic. A quadratic Bézier whose control point sits at the
+box corner bulges **~6% outward** at the middle of the corner — on a 40px radius that is over
+2px — so the corner reads as squarer and heavier than the radius says it is, and it does not
+match the circles drawn by `ellipsePath` beside it.
+
+Corners shall therefore be **cubic** segments using the standard `kappa = 0.5522847498307936`
+control-point offset, which is the same constant `ellipsePath` already uses, keeping the drawn
+outline within **0.1%** of a true circle. The radius continues to be clamped to half the
+shorter side, and a radius of zero continues to emit a plain four-line rectangle.
+
+Because `drawRoundedRect` and `roundedRectPath` are one implementation (FR-42), this applies
+everywhere a rounded rectangle is drawn — every themed control, every panel — and to the path
+a trim (FR-42) operates on.
+
 ## 4. Non-functional Requirements
 
 ### NFR-1 Platform independence

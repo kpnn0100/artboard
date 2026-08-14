@@ -348,6 +348,13 @@ continuous run instead of stopping at the seam.
 - `trimmedRange()` walks the pieces, skips those wholly outside, slices the partial ones, and
   emits `moveTo` once. It deliberately does not re-apply `close()`: a trim is a cut.
 
+`roundedRectPath` builds each corner as a cubic quarter-circle with the `kappa` offset (FR-45),
+the same constant `ellipsePath` uses. The quadratic it replaced put its control point at the box
+corner, which bulges ~6% outward at the middle of the corner — a parabola through the right two
+endpoints, not an arc — so corners read squarer than their radius and did not match the circles
+drawn beside them. The cubic form holds the outline within 0.03% of a true arc at any radius,
+because the error is a ratio of the radius rather than an absolute distance.
+
 `ellipsePath()` / `roundedRectPath()` hold the outlines that `drawCircle` / `drawRoundedRect`
 emit, and those two now build and emit a `Path` rather than duplicating the geometry — so the
 shape a trim operates on is the same shape that gets drawn. `CircleSegment`,
