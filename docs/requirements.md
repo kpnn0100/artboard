@@ -862,6 +862,13 @@ scrollable by wheel **and** by drag, shall clamp its offset to the content, and 
 **scrollbar whenever the content exceeds the viewport** and not otherwise. Content the user
 cannot reach and cannot see the existence of is a defect, not a layout compromise.
 
+The viewport it measures shall be **the same rectangle its content is laid out in**, defined in
+one place and read by the measurement, the placement, the visible test, the paint clip, and the
+bar alike. A viewport even a few pixels taller than the box the content may occupy sets an
+offset limit that stops short, so the final row is unreachable at *every* offset — and where
+rows are shown only when they fit whole, that shortfall hides a whole row. The property to
+assert is therefore reachability: scrolled to the end, the last row lands inside the box.
+
 ## 4. Non-functional Requirements
 
 ### NFR-1 Platform independence

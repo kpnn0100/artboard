@@ -173,6 +173,21 @@ When the answer is yes:
 - **Measure both numbers every layout** — viewport height and content height — so the answer stays
   right after a resize, a document edit, or a font change. Never cache a content height computed
   from a fixture.
+- **Measure the box you lay out in — define that box ONCE.** This is the trap, and it is silent.
+  A list box has one top and one bottom; `measure()`, the row placement, the row-visible test, the
+  paint clip, and the indicator must all read them from one accessor. Recompute the box inline at
+  each site and the copies drift by a padding, and a viewport even a few pixels taller than the
+  rows are allowed to occupy sets a limit that stops short — so the last row is unreachable at
+  *every* offset, not merely awkward to reach. If rows are only shown when they fit **whole**
+  (right for editable fields — half a text field is not editable), that shortfall hides a whole
+  row. Assert reachability, not movement: walk the scroll to the end and check every row was
+  fully visible at some point.
+- **Clip while painting, too.** The offset shifts rows past *both* edges. Self-drawn content
+  (headers, separators, chips) needs `save()`/`clipRect(box)`/`restore()` around the row loop, or
+  a half-scrolled row draws over the column captions above and the footer below. A `break` on the
+  first row past the bottom is not a clip: it leaves the top edge unguarded. And per-row
+  decorations must be drawn on the same condition as the row's widgets, or chips float beside a
+  hidden row.
 - **Clamp at both ends.** `offset` stays within `[0, maxOffset]`; scrolling past either end is a
   no-op, not a runaway. When `maxOffset == 0`, `scrollable()` is false and the wheel **returns
   false so it bubbles** to an ancestor that can use it (see `Segment::dispatchGesture`,
@@ -328,8 +343,10 @@ the source of truth, the conformance reference, and the floor every adapter must
 - [ ] **Overflow scrolls (§2):** every panel/list/tree whose content can outgrow its box clips
       **and** scrolls — viewport + content measured every layout, offset clamped at both ends, a
       visible indicator while scrollable, wheel **and** drag land in the same place, an unscrollable
-      list bubbles the wheel instead of eating it, and no row is silently dropped. Tested per list:
-      scrollable → wheel moves it → clamps at the end → returns exactly to 0.
+      list bubbles the wheel instead of eating it, and no row is silently dropped. The list box is
+      defined **once** and `measure()`/placement/visible-test/clip/bar all read it. Tested per list:
+      scrollable → wheel moves it → clamps at the end → returns exactly to 0, **and** every row was
+      fully visible at some offset along the way.
 - [ ] Visual/interaction quality (§2A): motion is motivated + actually driven each frame (no
       snapping half-tween) + eased + honors `reducedMotion()`; colour/radius/type pulled from
       `Theme` (consistency locks); text/fills legible (contrast); empty & loading states drawn
