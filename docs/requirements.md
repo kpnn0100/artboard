@@ -392,6 +392,19 @@ every existing 4-argument call site is unaffected.
 - **Letter-spacing** adds `letterSpacingPx` of extra advance after every glyph (uppercase
   "tracking" is a common request for small section-header labels). An adapter with no native
   tracking support falls back to drawing glyph-by-glyph with manual advance.
+- **An adapter may accept a face the host already holds** (**FR-22a**, added 2026-08-20). The HAL
+  still loads no fonts, and `drawText` still takes only a family *name* — but an adapter whose text
+  stack can be handed a face directly shall expose a **host-side registration** entry point for one,
+  keyed by the family name `drawText` will ask for. `CairoTarget` has `registerFontFile(family,
+  path)` and now `registerFontMemory(family, bytes, size)`; a registered family wins over the
+  adapter's own text stack, and an unregistered one behaves exactly as before. This is what lets an
+  application ship its typeface **inside its binary** — no font files on disk, no Fontconfig, no
+  system font that may or may not be installed — which is the only way its text is identical on
+  every platform. The bytes are not copied: the caller owns them and must keep them alive for the
+  process (an embedded array does that by construction). It is deliberately *not* on
+  `IRenderTarget`: it is bootstrap, adapter-specific (a Canvas2D host registers a font through CSS,
+  not through a byte pointer), and putting it on the HAL would force every backend to have a
+  concept it cannot honour (ISP).
 - `ui::TextStyle` (and the `scene::Text` drawable) carry the same two fields so `LabelSegment`
   and any control built on a `TextStyle` (`Button`, `Checkbox`, `TextBox`, `TabView`,
   `ComboBox`, `Knob`, ...) can opt into a themed family/tracking without every control

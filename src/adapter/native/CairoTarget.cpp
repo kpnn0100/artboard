@@ -36,6 +36,17 @@ namespace artboard
         if (FT_New_Face(ftLib(), ttfPath.c_str(), 0, &face) != 0 || !face) return;
         ftFaces()[family] = cairo_ft_font_face_create_for_ft_face(face, 0);
     }
+
+    void CairoTarget::registerFontMemory(const std::string &family, const unsigned char *bytes,
+                                         std::size_t size)
+    {
+        if (family.empty() || !bytes || size == 0 || ftFaces().count(family)) return;
+        // FT_New_Memory_Face does NOT copy: the buffer must outlive the face, which is why the
+        // header makes that the caller's contract (FR-22a). An embedded array satisfies it.
+        FT_Face face = nullptr;
+        if (FT_New_Memory_Face(ftLib(), bytes, (FT_Long)size, 0, &face) != 0 || !face) return;
+        ftFaces()[family] = cairo_ft_font_face_create_for_ft_face(face, 0);
+    }
 #endif
 
     void CairoTarget::save()

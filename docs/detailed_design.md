@@ -463,6 +463,23 @@ the caret lands nowhere near the click. Deferring makes the behaviour independen
 host keeps its context alive — and costs nothing visible, because a click already schedules the
 redraw that resolves it.
 
+**Font faces the host supplies (FR-22a).** Compiled under `ARTBOARD_CAIRO_FT`, `CairoTarget` keeps a
+process-wide `map<string, cairo_font_face_t *>` plus one lazily-initialised `FT_Library`, and two
+static registration calls fill it:
+
+- `registerFontFile(family, ttfPath)` — `FT_New_Face`.
+- `registerFontMemory(family, bytes, size)` — `FT_New_Memory_Face`. **The bytes are not copied**;
+  FreeType reads them for the life of the face, so the caller owns them and must keep them alive for
+  the process. An array compiled into the binary satisfies that by construction, which is the case
+  this exists for: a host that embeds its typeface needs no font file, no Fontconfig and no
+  system-installed family, so its text is identical on every platform.
+
+Both are no-ops for a family already registered (first registration wins, so a host can register a
+preferred face and then a fallback pass cannot displace it) and both fail silently on a face
+FreeType rejects — the family then falls through to `cairo_select_font_face`, which is exactly the
+behaviour of a family that was never registered. `drawText` and `measureText` consult the map first,
+so registration is the only thing a host does and the drawing code stays unchanged.
+
 `CairoTarget` users should clear the context after each frame (`setContext(nullptr)`) so a
 stale one cannot be reached at all; `measureText` then falls back to the base estimate rather
 than touching freed memory.

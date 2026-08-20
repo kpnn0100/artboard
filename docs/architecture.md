@@ -214,6 +214,15 @@ state under `reducedMotion()`.
   family via `cairo_select_font_face` and, when tracking is non-zero, advances glyph-by-glyph
   (UTF-8 aware) using `cairo_text_extents`; `Canvas2DTarget` builds a quoted CSS `font` string
   and sets `ctx.letterSpacing` where supported.
+- **Host-side font registration lives on the adapter, not on the HAL** (FR-22a). Under
+  `ARTBOARD_CAIRO_FT`, `CairoTarget::registerFontFile(family, path)` and
+  `CairoTarget::registerFontMemory(family, bytes, size)` populate a process-wide family →
+  `cairo_font_face_t*` map (FreeType `FT_New_Face` / `FT_New_Memory_Face`), and `drawText` /
+  `measureText` prefer a registered face over `cairo_select_font_face`. That is what lets a host
+  embed its typeface in its own binary and get identical text on every platform, with no
+  Fontconfig and no installed system font in the picture. It is adapter-specific bootstrap by
+  design — a Canvas2D host registers a font through CSS, not through a byte pointer — so pushing it
+  onto `IRenderTarget` would force a concept some backends cannot honour (ISP).
 - `RecordingTarget` records draw operations for tests and inspection.
 
 ### 3.4 `input`

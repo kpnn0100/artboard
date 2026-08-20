@@ -24,6 +24,20 @@ namespace artboard
         // Call once per family at startup. When ARTBOARD_CAIRO_FT is not defined (the
         // desktop/GTK build) this does not exist and drawText behaves exactly as before.
         static void registerFontFile(const std::string &family, const std::string &ttfPath);
+        /**
+         *  Register a face the host already holds in memory, under the family name `drawText`
+         *  will ask for (FR-22a). This is how an application ships its typeface INSIDE its
+         *  binary: no font file on disk, no Fontconfig, no system-installed family — so its text
+         *  is identical on every platform it runs on.
+         *
+         *  The bytes are NOT copied. FreeType reads them for the life of the face, so the caller
+         *  owns them and must keep them alive for the process; an array compiled into the binary
+         *  satisfies that by construction. A family that is already registered is left alone, and
+         *  a face FreeType rejects is skipped silently — either way the family falls through to
+         *  the adapter's own text stack, exactly as an unregistered one does.
+         */
+        static void registerFontMemory(const std::string &family, const unsigned char *bytes,
+                                       std::size_t size);
 #endif
 
         void save() override;

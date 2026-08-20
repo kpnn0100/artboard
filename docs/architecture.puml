@@ -283,6 +283,15 @@ package "adapter/web" {
   Canvas2DTarget ..|> IRenderTarget
 }
 
+package "adapter/native" {
+  class CairoTarget {
+    + setContext(cr)
+    + {static} registerFontFile(family, path)     ' FR-22a, ARTBOARD_CAIRO_FT
+    + {static} registerFontMemory(family, bytes, size)  ' FR-22a: the face lives in the binary
+  }
+  CairoTarget ..|> IRenderTarget
+}
+
 Segment ..> KeyEvent
 Segment ..> Gesture
 Segment ..> Transform
