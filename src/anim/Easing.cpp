@@ -174,7 +174,32 @@ namespace artboard
             return cubicBezierY(0.05, 0.7, 0.1, 1.0, t);
         case Easing::EmphasizedAccel:
             return cubicBezierY(0.3, 0.0, 0.8, 0.15, t);
+
+        case Easing::Hermite:
+            // No slopes were given, so the curve rests at both ends.
+            return applyHermite(t, 0.0, 0.0);
         }
         return t; // defensive: only reached if `e` is an out-of-range cast
+    }
+
+    double applyHermite(double t, double slopeIn, double slopeOut)
+    {
+        if (t < 0.0) t = 0.0;
+        if (t > 1.0) t = 1.0;
+        // Hermite basis with values 0 at t=0 and 1 at t=1: the value terms collapse to the
+        // smoothstep h01, and each tangent term carries one endpoint slope.
+        const double t2 = t * t;
+        const double t3 = t2 * t;
+        return (3.0 * t2 - 2.0 * t3)          // value basis (0 at the start, 1 at the end)
+               + slopeIn * (t3 - 2.0 * t2 + t) // h'(0) = slopeIn
+               + slopeOut * (t3 - t2);         // h'(1) = slopeOut
+    }
+
+    double applyEasing(Easing e, double t, double slopeIn, double slopeOut)
+    {
+        // Only Hermite is shaped by the caller; every other curve's shape is its definition.
+        if (e == Easing::Hermite)
+            return applyHermite(t, slopeIn, slopeOut);
+        return applyEasing(e, t);
     }
 }

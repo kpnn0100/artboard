@@ -50,7 +50,7 @@ namespace artboard
         const int index = static_cast<int>(cycle);
         if (yoyo && (index % 2 == 1))
             phase = 1.0 - phase;
-        return from + (to - from) * applyEasing(easing, phase);
+        return from + (to - from) * applyEasing(easing, phase, slopeIn, slopeOut);
     }
 
     void AnimatedProperty::animateTo(double target, double durationMs, Easing easing, double nowMs)

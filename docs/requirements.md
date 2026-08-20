@@ -66,9 +66,11 @@ selection shall not embed any backend-specific code.
 ### FR-4b Tween specification
 
 The framework shall provide a `Tween` value type describing a complete scalar animation: `from`,
-`to`, `durationMs`, optional `delayMs`, an easing curve, a `repeat` count (`-1` = infinite), and a
-`yoyo` flag (reverse on alternate repeats). `Tween` shall be a pure, time-source-agnostic function
-of elapsed time so the same specification drives live UI and offline rendering identically.
+`to`, `durationMs`, optional `delayMs`, an easing curve, a `repeat` count (`-1` = infinite), a
+`yoyo` flag (reverse on alternate repeats), and the two endpoint slopes the authored curve of FR-4f
+takes (`slopeIn`, `slopeOut`, ignored by every curve whose shape is fixed by definition). `Tween`
+shall be a pure, time-source-agnostic function of elapsed time so the same specification drives
+live UI and offline rendering identically.
 
 ### FR-4c Animator timeline
 
@@ -93,6 +95,30 @@ The framework shall expose a global accessibility switch (`setReducedMotion(bool
 that, when enabled, collapses **all** framework motion to instant: a `Spring` jumps to its target and
 an `AnimatedProperty` snaps to the tween's resting value (firing `onComplete`). This lets a host that
 detects a user "reduce motion" preference present final states with no animation. The default is off.
+
+### FR-4f A curve can be authored by the speed it enters and leaves at
+
+Every curve in FR-4a has a *fixed* endpoint speed — `EaseOutCubic` always arrives at rest, `Linear`
+always travels at exactly its average pace. That is enough for one animation and not enough for a
+chain of them, because the seam between two legs is visible precisely when the speed jumps across
+it, and no choice from a fixed list removes the jump. So a caller shall be able to state the slope
+a curve **enters** and **leaves** at:
+
+- `Easing::Hermite` is the cubic Hermite curve pinned to `h(0) = 0` and `h(1) = 1` with
+  `h'(0) = slopeIn` and `h'(1) = slopeOut` — the unique cubic those four facts determine, so the
+  acceleration between the endpoints is a consequence and not a third thing to author.
+- Slopes are in **slope space**: eased progress per unit of normalized time. A caller animating a
+  real quantity converts from its own units once (`slope = v · durationMs / (1000 · (to − from))`
+  for a value-space speed `v` per second) — the curve itself stays dimensionless, so it is the same
+  pure function of `t` as every other curve.
+- `slopeIn = slopeOut = 1` reproduces `Linear`; `0` at both ends rests at both ends (smoothstep),
+  which is what the curve gives when no slopes are supplied — `applyEasing(Easing::Hermite, t)`,
+  and a `Tween` left at its default slopes, are that resting curve. Large slopes may carry the
+  curve outside `[0,1]` between the endpoints, exactly as the back/elastic families already may;
+  the FR-4a endpoint pinning and input clamp still hold.
+- The slopes travel with the animation, not with the enum: `applyEasing(e, t, slopeIn, slopeOut)`
+  applies them for `Easing::Hermite` and ignores them for every other curve, and `Tween` carries
+  them (FR-4b) so a tween authored this way stays one pure function of elapsed time.
 
 ### FR-5 Shared focus groups
 

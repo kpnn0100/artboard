@@ -76,7 +76,8 @@ TEST(Easing_endpoints_pinned_for_all_curves)
         Easing::EaseInElastic, Easing::EaseOutElastic, Easing::EaseInOutElastic,
         Easing::EaseInBounce, Easing::EaseOutBounce, Easing::EaseInOutBounce,
         Easing::Standard, Easing::StandardDecel, Easing::StandardAccel,
-        Easing::EmphasizedDecel, Easing::EmphasizedAccel};
+        Easing::EmphasizedDecel, Easing::EmphasizedAccel,
+        Easing::Hermite};
     for (Easing e : all)
     {
         CHECK_NEAR(applyEasing(e, 0.0), 0.0, 1e-9);
@@ -208,6 +209,71 @@ TEST(AnimatedProperty_lifecycle)
 }
 
 // ───────────────────────── anim/Tween ─────────────────────────
+TEST(Easing_hermite_is_authored_by_its_endpoint_slopes_FR4f)
+{
+    // The four facts that define the cubic: value 0 and 1 at the ends, slope as asked at each.
+    CHECK_NEAR(applyHermite(0.0, 2.5, 0.3), 0.0, 1e-9);
+    CHECK_NEAR(applyHermite(1.0, 2.5, 0.3), 1.0, 1e-9);
+    const double h = 1e-6;
+    CHECK_NEAR((applyHermite(h, 2.5, 0.3) - applyHermite(0.0, 2.5, 0.3)) / h, 2.5, 1e-4);
+    CHECK_NEAR((applyHermite(1.0, 2.5, 0.3) - applyHermite(1.0 - h, 2.5, 0.3)) / h, 0.3, 1e-4);
+
+    // Two slopes worth naming: 1/1 IS Linear, 0/0 is smoothstep (rest at both ends).
+    for (double t : {0.1, 0.25, 0.5, 0.75, 0.9})
+    {
+        CHECK_NEAR(applyHermite(t, 1.0, 1.0), t, 1e-9);
+        CHECK_NEAR(applyHermite(t, 0.0, 0.0), 3.0 * t * t - 2.0 * t * t * t, 1e-9);
+    }
+    // Input clamps like every other curve (FR-4a), so out-of-range t cannot extrapolate.
+    CHECK_NEAR(applyHermite(-1.0, 2.5, 0.3), 0.0, 1e-9);
+    CHECK_NEAR(applyHermite(2.0, 2.5, 0.3), 1.0, 1e-9);
+
+    // A big entry slope overshoots mid-curve and still lands on 1 -- allowed, like back/elastic.
+    CHECK(applyHermite(0.5, 6.0, 0.0) > 1.0);
+    CHECK_NEAR(applyHermite(1.0, 6.0, 0.0), 1.0, 1e-9);
+
+    // The enum alone carries no slopes, so Hermite rests at both ends there.
+    CHECK_NEAR(applyEasing(Easing::Hermite, 0.3), applyHermite(0.3, 0.0, 0.0), 1e-9);
+    // The slope-carrying overload: Hermite applies them, a fixed-shape curve ignores them.
+    CHECK_NEAR(applyEasing(Easing::Hermite, 0.3, 2.5, 0.3), applyHermite(0.3, 2.5, 0.3), 1e-9);
+    CHECK(applyEasing(Easing::Hermite, 0.3, 2.5, 0.3) != applyEasing(Easing::Hermite, 0.3));
+    CHECK_NEAR(applyEasing(Easing::Linear, 0.3, 5.0, 5.0), 0.3, 1e-9);
+    CHECK_NEAR(applyEasing(Easing::EaseOutCubic, 0.5, 5.0, 5.0),
+               applyEasing(Easing::EaseOutCubic, 0.5), 1e-9);
+}
+TEST(Tween_carries_the_authored_slopes_FR4f)
+{
+    // The slopes ride on the spec (ctor tail args or withSlopes), so `at` keeps the shape.
+    Tween t(0, 10, 100, 0.0, Easing::Hermite, 0, false, 2.0, 0.5);
+    CHECK_NEAR(t.slopeIn, 2.0, 1e-9);
+    CHECK_NEAR(t.slopeOut, 0.5, 1e-9);
+    CHECK_NEAR(t.at(50), 10.0 * applyHermite(0.5, 2.0, 0.5), 1e-9);
+    CHECK_NEAR(t.at(0), 0.0, 1e-9);
+    CHECK_NEAR(t.at(100), 10.0, 1e-9);
+
+    // Value-space speed at the start is slope * distance / duration -- the inverse of the
+    // conversion a caller does to author "leave at v units per second" (FR-4f).
+    const double dt = 1e-4;
+    CHECK_NEAR((t.at(dt) - t.at(0.0)) / dt, 2.0 * 10.0 / 100.0, 1e-5);
+    CHECK_NEAR((t.at(100.0) - t.at(100.0 - dt)) / dt, 0.5 * 10.0 / 100.0, 1e-5);
+
+    Tween chained = Tween::range(0, 10, 100).withEasing(Easing::Hermite).withSlopes(1.0, 1.0);
+    CHECK_NEAR(chained.at(25), 2.5, 1e-9);   // slopes 1/1 -> the Linear tween exactly
+    CHECK_NEAR(chained.at(75), 7.5, 1e-9);
+
+    // Defaults: an aggregate-initialised Tween rests at both ends, and a fixed-shape curve is
+    // unaffected by slopes left on the spec.
+    Tween rest(0, 10, 100, 0.0, Easing::Hermite);
+    CHECK_NEAR(rest.at(50), 5.0, 1e-9);
+    CHECK_NEAR(rest.at(25), 10.0 * (3.0 * 0.0625 - 2.0 * 0.015625), 1e-9);
+    Tween fixed(0, 10, 100, 0.0, Easing::EaseOutCubic, 0, false, 9.0, 9.0);
+    CHECK_NEAR(fixed.at(50), 10.0 * applyEasing(Easing::EaseOutCubic, 0.5), 1e-9);
+
+    // Yoyo runs the same authored curve backwards -- the reversed cycle still rests on `from`.
+    Tween y(0, 10, 100, 0.0, Easing::Hermite, 1, true, 2.0, 0.5);
+    CHECK_NEAR(y.at(125), 10.0 * applyHermite(0.75, 2.0, 0.5), 1e-9);
+    CHECK_NEAR(y.at(200), 0.0, 1e-9);
+}
 TEST(Tween_basic_and_finish)
 {
     Tween t(0, 10, 100);

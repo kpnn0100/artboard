@@ -109,6 +109,36 @@ and `Spring` settle-speed presets (`kSpatialFast/Default/Slow`, `kEffectsFast/De
 `omega` values consumed by the existing `Spring::advance(dtSeconds, omega)` (FR-4d). It carries
 no dependency the rest of `anim` doesn't already have.
 
+## 2a-ii. `Easing::Hermite` + authored endpoint slopes
+
+`Easing::Hermite` (FR-4f) is the one curve whose shape its name does not fix: the caller supplies
+the two endpoint slopes. `Easing.cpp` gains one public pure function
+
+    double applyHermite(double t, double slopeIn, double slopeOut)
+
+which clamps `t` to `[0,1]` and evaluates the cubic Hermite basis with values `0` and `1` at the
+ends and tangents `slopeIn`/`slopeOut`:
+
+    h(t) = (3t^2 - 2t^3) + slopeIn * (t^3 - 2t^2 + t) + slopeOut * (t^3 - t^2)
+
+so `h(0)=0`, `h(1)=1`, `h'(0)=slopeIn`, `h'(1)=slopeOut` — the endpoint pinning of FR-4a holds by
+construction, and (like back/elastic) a large slope may carry the curve outside `[0,1]` in between.
+`slopeIn = slopeOut = 1` is exactly `Linear`; `0`/`0` is smoothstep, the resting curve.
+
+The slopes are per-animation data, so they cannot live in the `Easing` enum. Rather than a second
+curve-lookup mechanism, `applyEasing` gains a four-argument overload
+
+    double applyEasing(Easing e, double t, double slopeIn, double slopeOut)
+
+that routes `Hermite` to `applyHermite` and everything else to the two-argument `applyEasing`,
+whose shape is fixed by definition. The two-argument form still answers for `Hermite` — with the
+resting slopes `0`/`0` — so no existing caller changes.
+
+Slopes are dimensionless (eased progress per unit of normalized time). A caller animating a real
+quantity converts once, outside Artboard: `slope = v * durationMs / (1000 * (to - from))` for a
+value-space speed `v` per second. Genesis's `slopeForSpeed`/`speedForSlope` (its G-25) is that
+conversion; keeping it out of the curve is what lets the curve stay a pure function of `t`.
+
 ## 2b. `anim::Tween`
 
 A pure value type describing a whole scalar animation.
@@ -119,11 +149,16 @@ A pure value type describing a whole scalar animation.
 - `Easing easing`
 - `int repeat` (additional cycles; `-1` = infinite)
 - `bool yoyo` (reverse direction on odd cycles)
+- `double slopeIn, slopeOut` (endpoint slopes for `Easing::Hermite`, FR-4f; default `0` = rest at
+  both ends, ignored by every curve whose shape is fixed by definition)
 
 ### Operations
 
-- `at(elapsedMs)` — sampled value: holds `from` during `delayMs`, eases across each cycle, applies
+- `at(elapsedMs)` — sampled value: holds `from` during `delayMs`, eases across each cycle (through
+  the slope-carrying `applyEasing` overload, so an authored `Hermite` curve keeps its shape), applies
   yoyo on odd cycles, and clamps to the final value once finished.
+- `withSlopes(in, out)` — chainable setter, alongside `withEasing`/`after`/`repeats`/`looping`/
+  `yoyoing`; the constructor takes the same two values as its last (defaulted) parameters.
 - `totalMs()` — `delayMs + durationMs * (repeat+1)`; `+inf` when infinite.
 - `finished(elapsedMs)` — `false` for infinite tweens; otherwise `elapsedMs >= totalMs()`.
 
@@ -1151,6 +1186,9 @@ return `false` when there is nothing out of view so the wheel bubbles (FR-46).
   {PushLayer,PopLayer}`), and the Canvas2D / Cairo adapters.
 - FR-31 maps to the five cubic-bezier `Easing` entries + `cubicBezierSolveX`/`cubicBezierY` in
   `Easing.cpp`, and the named constants in `anim/MotionTokens.h`.
+- FR-4f maps to `Easing::Hermite` + `applyHermite` and the four-argument `applyEasing` overload in
+  `Easing.h`/`.cpp`, and to `Tween::slopeIn`/`slopeOut`/`withSlopes` consumed by `Tween::at`
+  (`anim/Animation.h`/`.cpp`).
 - FR-30 maps to `drawShadow`/`drawElevation` in `scene/Shapes.h`/`.cpp`, composed from
   `IRenderTarget::setLinearFill`/`setRadialFill`.
 - FR-28 maps to `RawPointer::touch`/`Gesture::touch`/`Gesture::velocity`, the new

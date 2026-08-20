@@ -114,8 +114,9 @@ state under `reducedMotion()`.
 
 - `Easing` is a library of pure easing curves (`applyEasing(curve, t)`); curves never touch a backend.
 - `Animation` defines a pure single-shot time-based scalar tween (kept for back-compat).
-- `Tween` is a richer pure spec: `from/to/durationMs/delayMs/easing/repeat/yoyo`, sampled by elapsed
-  time (`at(elapsedMs)`), used by both `AnimatedProperty` and `Animator`.
+- `Tween` is a richer pure spec: `from/to/durationMs/delayMs/easing/repeat/yoyo` plus the two
+  authored endpoint slopes (`slopeIn/slopeOut`, FR-4f), sampled by elapsed time (`at(elapsedMs)`),
+  used by both `AnimatedProperty` and `Animator`.
 - `AnimatedProperty` stores runtime animation state and drives a single scalar from a `Tween`
   (delay/repeat/yoyo + an `onComplete` callback).
 - `Animator` is a callback-based timeline: it owns many tracks, each animating an arbitrary value
@@ -131,6 +132,14 @@ state under `reducedMotion()`.
   bezier-solve helper (Newton-Raphson + bisection fallback) rather than a closed-form formula,
   so an arbitrary control-point shape is expressible through the same `Easing`/`applyEasing`
   seam as every other curve — no second "curve lookup" mechanism.
+- `Easing::Hermite` is the one curve whose *shape* is not fixed by its name: it is the cubic
+  Hermite pinned to 0 and 1 whose endpoint slopes the caller supplies (FR-4f). The slopes cannot
+  live in the enum, so they ride on the animation instead — `Tween` carries them and passes them to
+  the `applyEasing(e, t, slopeIn, slopeOut)` overload, which delegates to `applyHermite` for
+  `Hermite` and to the slope-free `applyEasing` for every other curve. That keeps one curve seam
+  (no second "parameterised curve" mechanism), keeps a curve a pure function of `t`, and leaves
+  callers that never author a slope untouched: the two-argument `applyEasing` still answers for
+  every curve, `Hermite` included (it rests at both ends).
 - `anim/MotionTokens.h` names a shared duration scale (`kDurationShort1..4/Medium1..4/Long1..4`)
   and `Spring` settle-speed presets (`kSpatialFast/Default/Slow`, `kEffectsFast/Default/Slow`),
   so applications reuse one motion vocabulary instead of hand-picking constants per control. It

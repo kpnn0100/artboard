@@ -15,6 +15,12 @@ package anim {
   enum Easing {
     + Standard / StandardDecel / StandardAccel
     + EmphasizedDecel / EmphasizedAccel  ' cubic-bezier curves, FR-31
+    + Hermite  ' authored endpoint slopes, FR-4f
+  }
+  class EasingFns <<(F,#88c) free fns>> {
+    + applyEasing(e, t)
+    + applyEasing(e, t, slopeIn, slopeOut)
+    + applyHermite(t, slopeIn, slopeOut)
   }
   class "MotionTokens" as MotionTokens <<(F,#88c) named constants>> {
     + kDurationShort1..4 / Medium1..4 / Long1..4
@@ -22,7 +28,10 @@ package anim {
     + kEffectsFast/Default/Slow  ' Spring omega presets
   }
   class Animation
-  class Tween
+  class Tween {
+    + slopeIn / slopeOut  ' FR-4f, ignored by fixed-shape curves
+    + withSlopes(in, out)
+  }
   class AnimatedProperty
   class Animator
   class Spring {
@@ -35,6 +44,8 @@ package anim {
   }
   Animation ..> Easing
   Tween ..> Easing
+  Tween ..> EasingFns
+  EasingFns ..> Easing
   AnimatedProperty *--> Tween
   Animator *--> Tween
   Spring ..> ReducedMotion

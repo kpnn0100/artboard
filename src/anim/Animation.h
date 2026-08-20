@@ -44,12 +44,18 @@ namespace artboard
         Easing easing = Easing::Linear;
         int repeat = 0;     // extra cycles after the first; -1 = infinite
         bool yoyo = false;  // reverse direction on odd cycles
+        // Endpoint slopes for Easing::Hermite (FR-4f), in eased progress per unit of normalized
+        // time; 0/0 rests at both ends. Every other curve's shape is fixed, so it ignores them.
+        double slopeIn = 0.0;
+        double slopeOut = 0.0;
 
         Tween() = default;
         Tween(double from_, double to_, double durationMs_, double delayMs_ = 0.0,
-              Easing easing_ = Easing::Linear, int repeat_ = 0, bool yoyo_ = false)
+              Easing easing_ = Easing::Linear, int repeat_ = 0, bool yoyo_ = false,
+              double slopeIn_ = 0.0, double slopeOut_ = 0.0)
             : from(from_), to(to_), durationMs(durationMs_), delayMs(delayMs_),
-              easing(easing_), repeat(repeat_), yoyo(yoyo_) {}
+              easing(easing_), repeat(repeat_), yoyo(yoyo_),
+              slopeIn(slopeIn_), slopeOut(slopeOut_) {}
 
         static Tween range(double from_, double to_, double durationMs_)
         {
@@ -60,6 +66,7 @@ namespace artboard
         Tween &repeats(int n) { repeat = n; return *this; }
         Tween &looping() { repeat = -1; return *this; }
         Tween &yoyoing(bool y = true) { yoyo = y; return *this; }
+        Tween &withSlopes(double in, double out) { slopeIn = in; slopeOut = out; return *this; }
 
         /** Sampled value at `elapsedMs` (delay + repeat + yoyo applied). */
         double at(double elapsedMs) const;
