@@ -5,6 +5,13 @@
 #include <utility>
 #include <vector>
 
+// <cmath> doesn't guarantee M_PI (MSVC/MinGW only define it when _USE_MATH_DEFINES
+// is set before the first include of <cmath>/<math.h>, which is order-fragile
+// across translation units) — define it here if the platform header didn't.
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 using namespace artboard;
 
 // ───────────────────────── core/Geometry ─────────────────────────
