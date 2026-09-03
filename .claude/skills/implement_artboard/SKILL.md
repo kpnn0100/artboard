@@ -5,6 +5,13 @@ description: Use when implementing, changing, removing, or fixing ANY feature in
 
 # implement_artboard
 
+> **Invoke `arstro.rule` first.** It carries the suite-wide rules this skill builds on:
+> requirements-first and the conflict rule, the V-model doc-sync loop, the agent-drivable surface,
+> and the ledger/defect/commit conventions. **Follow both; where they overlap, this file's
+> checklist is the one to satisfy.** If `arstro.rule` is not in your skill list you are in a
+> standalone checkout of this submodule — the rules still apply, and the copy of record is
+> `.claude/skills/arstro.rule/SKILL.md` in the arstro umbrella.
+
 The single workflow for changing this repo (Arstro **Artboard**). Nothing ships unless
 **doc, design, code, and tests move together**. Skipping a stage is the bug.
 
