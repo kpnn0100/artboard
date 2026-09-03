@@ -102,8 +102,11 @@ above it is updated.**
    side/feature branch, and do not leave verified work uncommitted. One focused commit per
    implemented+tested feature, in every repo it touched (Artboard, and the umbrella with its
    submodule bump); do not batch several features into one commit. Use the project's commit
-   identity and end the message with the `Co-Authored-By` trailer. Push only when asked (or when
-   the user has set up push access).
+   identity and end the message with the `Co-Authored-By` trailer. **Then pull and push** —
+   `arstro.rule` §7 has the order, and it matters here: this repo is a submodule, so it must be
+   committed, pulled, re-tested and **pushed before the umbrella records its pointer**. A pointer
+   bump names a commit hash, and a rebase during a later pull rewrites that hash — record it early
+   and the umbrella points at a commit that exists on no branch.
 
 ## 2. SOLID (how to add code)
 
